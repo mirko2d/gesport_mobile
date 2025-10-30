@@ -1,0 +1,664 @@
+import { LinearGradient } from 'expo-linear-gradient';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
+import {
+  Activity,
+  Calendar,
+  ChevronDown,
+  Clock,
+  MapPin
+} from 'lucide-react-native';
+import { cssInterop } from 'nativewind';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Dimensions, Easing, FlatList, Image, ImageSourcePropType, Linking, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useAuth } from '../context/AuthContext';
+import { PAST_EDITIONS } from '../lib/editions';
+import { SPONSORS, type SponsorItem } from '../lib/sponsors';
+import AppShell from './components/AppShell';
+import Button from './components/ui/Button';
+import SectionTitle from './components/ui/SectionTitle';
+
+// Setup LinearGradient for NativeWind
+cssInterop(LinearGradient, {
+  className: 'style',
+});
+
+const { width } = Dimensions.get('window');
+const ACCENT = '#00E676'; // adidas-like green accent
+
+// Simple reveal-on-scroll wrapper
+function RevealOnScroll({
+  children,
+  scrollY,
+  viewportHeight,
+  offset = 100,
+  delay = 0,
+  direction = 'up', // 'up' | 'left' | 'right'
+  baseY,
+  distance = 40,
+}: {
+  children: React.ReactNode;
+  scrollY: number;
+  viewportHeight: number;
+  offset?: number;
+  delay?: number;
+  direction?: 'up' | 'left' | 'right';
+  baseY?: number;
+  distance?: number;
+}) {
+  const [shown, setShown] = useState(false);
+  const yRef = useRef(0);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translate = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Set initial translation based on direction
+    const initial = direction === 'up' ? distance : distance;
+    const sign = direction === 'left' ? -1 : 1;
+    if (direction === 'up') {
+      translate.setValue(initial);
+    } else {
+      translate.setValue(initial * sign);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (shown) return;
+    const absY = (baseY ?? 0) + yRef.current;
+    const trigger = scrollY + viewportHeight > absY - offset;
+    if (trigger) {
+      setShown(true);
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 1, duration: 600, delay, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(translate, { toValue: 0, duration: 600, delay, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      ]).start();
+    }
+  }, [scrollY, viewportHeight, offset, delay, shown, opacity, translate, baseY]);
+
+  return (
+    <Animated.View
+      onLayout={(e) => {
+        // y relative to ScrollView content
+        yRef.current = e.nativeEvent.layout.y;
+      }}
+      style={{
+        opacity,
+        transform: [direction === 'up' ? { translateY: translate } : { translateX: translate }],
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+// Simple diagonal stripes decoration (adidas-like)
+function Stripes({
+  tint = 'rgba(255,255,255,0.06)',
+  lines = 3,
+  thickness = 6,
+  gap = 10,
+  rotate = '-18deg',
+  widthFactor = 0.9,
+}: {
+  tint?: string;
+  lines?: number;
+  thickness?: number;
+  gap?: number;
+  rotate?: string;
+  widthFactor?: number;
+}) {
+  return (
+    <View style={{ position: 'absolute', top: -20, right: -50, transform: [{ rotate }], pointerEvents: 'none' }}>
+      {Array.from({ length: lines }).map((_, i) => (
+        <View key={i} style={{ height: thickness, width: width * widthFactor, backgroundColor: tint, marginBottom: gap }} />
+      ))}
+    </View>
+  );
+}
+
+// Countdown Timer Component
+function CountdownTimer({ targetDate }: { targetDate: Date }) {
+  const [timeLeft, setTimeLeft] = useState({
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date().getTime();
+      const distance = targetDate.getTime() - now;
+
+      if (distance > 0) {
+        setTimeLeft({
+          days: Math.floor(distance / (1000 * 60 * 60 * 24)),
+          hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+          minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
+          seconds: Math.floor((distance % (1000 * 60)) / 1000)
+        });
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [targetDate]);
+
+  return (
+    <View className="flex-row justify-between mb-6">
+      <View className="bg-white/10 backdrop-blur-sm rounded-lg p-3 flex-1 items-center mx-1">
+        <Text className="text-2xl font-bold text-[#00E676]">{timeLeft.days}</Text>
+        <Text className="text-sm uppercase tracking-wide mt-1 text-white">Días</Text>
+      </View>
+      <View className="bg-white/10 backdrop-blur-sm rounded-lg p-3 flex-1 items-center mx-1">
+        <Text className="text-2xl font-bold text-[#00E676]">{timeLeft.hours}</Text>
+        <Text className="text-sm uppercase tracking-wide mt-1 text-white">Horas</Text>
+      </View>
+      <View className="bg-white/10 backdrop-blur-sm rounded-lg p-3 flex-1 items-center mx-1">
+        <Text className="text-2xl font-bold text-[#00E676]">{timeLeft.minutes}</Text>
+        <Text className="text-sm uppercase tracking-wide mt-1 text-white">Min</Text>
+      </View>
+      <View className="bg-white/10 backdrop-blur-sm rounded-lg p-3 flex-1 items-center mx-1">
+        <Text className="text-2xl font-bold text-[#00E676]">{timeLeft.seconds}</Text>
+        <Text className="text-sm uppercase tracking-wide mt-1 text-white">Seg</Text>
+      </View>
+    </View>
+  );
+}
+
+// Sponsor Carousel Component
+function toImageSource(logo: SponsorItem['logo']): ImageSourcePropType {
+  if (typeof logo === 'string') {
+    return { uri: logo } as any;
+  }
+  return logo as any;
+}
+
+function SponsorCarousel({ items = SPONSORS, autoPlayInterval = 2500 }: { items?: SponsorItem[]; autoPlayInterval?: number }) {
+  const ITEM_WIDTH = 220;
+  const SPACING = 20;
+  const STEP = ITEM_WIDTH + SPACING;
+
+  const n = items?.length ?? 0;
+  const data = React.useMemo(() => (n > 0 ? [...items, ...items, ...items] : []), [n, items]);
+  const startIndex = n; // arranca en la sección del medio para looping
+
+  const listRef = React.useRef<FlatList>(null);
+  const scrollX = React.useRef(new Animated.Value(0)).current;
+  const [index, setIndex] = React.useState(startIndex);
+  const didInit = React.useRef(false);
+
+  // Posiciona al centro (sección del medio) sin animación al montar
+  React.useEffect(() => {
+    if (n === 0) return;
+    if (!didInit.current) {
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToOffset({ offset: startIndex * STEP, animated: false });
+        didInit.current = true;
+      });
+    }
+  }, [n]);
+
+  // Autoplay infinito
+  React.useEffect(() => {
+    if (!n || n <= 1) return; // no autoplay si 0 o 1
+    const id = setInterval(() => {
+      const next = index + 1; // avanzamos dentro del arreglo extendido
+      listRef.current?.scrollToOffset({ offset: next * STEP, animated: true });
+      setIndex(next);
+    }, autoPlayInterval);
+    return () => clearInterval(id);
+  }, [index, n, autoPlayInterval]);
+
+  const handleMomentumEnd = (e: any) => {
+    const i = Math.round(e.nativeEvent.contentOffset.x / STEP);
+    let corrected = i;
+    // Si salimos del rango de la sección del medio, corregimos sin animación
+    if (i >= 2 * n) corrected = i - n;
+    else if (i < n) corrected = i + n;
+
+    if (corrected !== i) {
+      listRef.current?.scrollToOffset({ offset: corrected * STEP, animated: false });
+    }
+    setIndex(corrected);
+  };
+
+  if (n === 0) return null;
+
+  const activeDot = ((index % n) + n) % n; // normaliza para 0..n-1
+
+  return (
+    <View className="py-10">
+      <Animated.FlatList
+        ref={listRef}
+        data={data}
+        keyExtractor={(item, i) => `${item.name}-${i}`}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16 }}
+        snapToInterval={STEP}
+        decelerationRate="fast"
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+          { useNativeDriver: true }
+        )}
+        onMomentumScrollEnd={handleMomentumEnd}
+        renderItem={({ item, index: i }) => {
+          const inputRange = [
+            (i - 1) * STEP,
+            i * STEP,
+            (i + 1) * STEP,
+          ];
+          const scale = scrollX.interpolate({
+            inputRange,
+            outputRange: [0.95, 1, 0.95],
+            extrapolate: 'clamp',
+          });
+          const opacity = scrollX.interpolate({
+            inputRange,
+            outputRange: [0.85, 1, 0.85],
+            extrapolate: 'clamp',
+          });
+
+          return (
+            <Animated.View style={{ width: ITEM_WIDTH, marginRight: SPACING, transform: [{ scale }], opacity }}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                className="bg-white rounded-2xl items-center justify-center p-4 shadow-sm"
+                onPress={() => item.url && Linking.openURL(item.url)}
+              >
+                <Image
+                  source={toImageSource(item.logo)}
+                  className="h-24 w-full"
+                  resizeMode="contain"
+                />
+                <Text className="text-coffee font-semibold mt-3 text-base">{item.name}</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          );
+        }}
+      />
+
+      {/* Dots */}
+      <View className="flex-row justify-center mt-3">
+        {Array.from({ length: n }).map((_, i) => (
+          <View
+            key={i}
+            className={`mx-1 h-2 rounded-full ${i === activeDot ? 'w-6 bg-primary' : 'w-2 bg-gray-300'}`}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// Edition Card Component
+function EditionCard({ id, year, color, image, description }: { id: string; year: string; color: string; image: any; description?: string }) {
+  return (
+    <View className="flex-1 mb-4">
+      <Link href={{ pathname: '/ediciones/[id]', params: { id } }} asChild>
+        <TouchableOpacity activeOpacity={0.9} className="rounded-xl overflow-hidden shadow-lg">
+          <Image
+            source={typeof image === 'string' ? { uri: image } : image}
+            className="h-48 w-full"
+            resizeMode="cover"
+          />
+          <LinearGradient 
+            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.2)']} 
+            className="absolute bottom-0 left-0 right-0 p-4"
+          >
+            <Text className="text-white text-3xl font-extrabold">{year}</Text>
+            <Text className="text-white/90 text-base mt-1">Ver detalles</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </Link>
+      {/* Brief description + Ver más */}
+      {description ? (
+        <View className="mt-2">
+          <Text className="text-coffee text-lg leading-7" numberOfLines={4}>
+            {description}
+          </Text>
+          <View className="mt-1">
+            <Link href="/ediciones/Index" asChild>
+              <TouchableOpacity className="flex-row items-center">
+                <Text className="text-primary text-lg font-semibold">Ver todas las ediciones</Text>
+                <ChevronDown color="#000000" size={22} className="rotate-[-90deg] ml-1" />
+              </TouchableOpacity>
+            </Link>
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// (Avatar initials now handled by AppShell default)
+
+export default function HomeScreen() {
+  const router = useRouter();
+  const { isAuth, user } = useAuth();
+  const params = useLocalSearchParams<{ section?: string }>();
+  const scrollRef = useRef<ScrollView>(null);
+  const [pendingScroll, setPendingScroll] = useState(false);
+  const contactPos = useRef<number | null>(null);
+  const [scrollY, setScrollY] = useState(0);
+  const viewportHeight = Dimensions.get('window').height;
+  // Base Y positions for full-screen sections
+  const historialBaseY = useRef(0);
+  const edicionesBaseY = useRef(0);
+  const caracteristicasBaseY = useRef(0);
+  const herramientasBaseY = useRef(0);
+  const testimoniosBaseY = useRef(0);
+  const sponsorsBaseY = useRef(0);
+  
+  const editions = PAST_EDITIONS.map(e => ({
+    id: e.id,
+    year: e.year,
+    color: 'bg-primary',
+    image: e.image,
+    description: e.description,
+  }));
+
+  const eventDate = new Date('2026-08-30T05:30:00');
+  
+  // If navigated with ?section=contacto, defer scroll until layout ready
+  useEffect(() => {
+    if (params?.section === 'contacto') {
+      setPendingScroll(true);
+    }
+  }, [params?.section]);
+
+  return (
+    <AppShell>
+      {/* Main Content */}
+  <ScrollView className="flex-1" ref={scrollRef} onScroll={(e) => setScrollY(e.nativeEvent.contentOffset.y)} scrollEventThrottle={16}>
+        {/* Presentación + Cuenta regresiva en un mismo degradé */}
+        <LinearGradient 
+          colors={['#000000', '#0a0a0a']} 
+          className="px-4"
+          style={{ paddingTop: 24, paddingBottom: 24 }}
+        >
+          {/* Adidas-like stripes decoration */}
+          <Stripes thickness={4} />
+          {/* Presentación */}
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} direction="left">
+            <SectionTitle className="text-white text-3xl">SOMOS GESPORT</SectionTitle>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} direction="right">
+            <View className="items-center mb-4">
+              <View className="w-10 h-10 rounded-full" style={{ backgroundColor: ACCENT }} />
+            </View>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={100} direction="left">
+            <Text className="text-white text-lg leading-7 text-center font-medium mb-6">
+              Somos GeSPORT, una comunidad que impulsa el running con eventos seguros, vibrantes y
+              bien organizados. Conectamos deportistas de todos los niveles para vivir la
+              experiencia de correr, competir y superar metas.
+            </Text>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={140} direction="up">
+            <View className="flex-row justify-center gap-3 mb-6">
+              <View className="bg-white/10 px-3.5 py-1.5 rounded-full"><Text className="text-white text-sm">Organización</Text></View>
+              <View className="bg-white/10 px-3.5 py-1.5 rounded-full"><Text className="text-white text-sm">Seguridad</Text></View>
+              <View className="bg-white/10 px-3.5 py-1.5 rounded-full"><Text className="text-white text-sm">Comunidad</Text></View>
+            </View>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={180} direction="up">
+            <View className="flex-row justify-center gap-3 mb-8">
+              <Link href="/masinformacion/Index" asChild>
+                <Button title="Conócenos" variant="secondary" />
+              </Link>
+              <Link href="/events/TodosEvents" asChild>
+                <Button title="Ver eventos" variant="primary" />
+              </Link>
+            </View>
+          </RevealOnScroll>
+
+          {/* Cuenta regresiva */}
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} direction="left">
+            <Text className="text-white text-3xl font-bold mb-2">PRÓXIMO EVENTO</Text>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} direction="right">
+            <Text className="text-white text-3xl font-bold mb-5">Maratón GeSPORT 2026</Text>
+          </RevealOnScroll>
+          
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={100} direction="up">
+            <View className="bg-white/10 backdrop-blur-sm rounded-xl p-7 mb-10">
+              <CountdownTimer targetDate={eventDate} />
+              
+              <View className="flex-row items-center mb-2">
+                <Calendar color="white" size={16} />
+                <Text className="text-white ml-2">30 Agosto 2026</Text>
+              </View>
+              
+              <View className="flex-row items-center mb-2">
+                <Clock color="white" size={16} />
+                <Text className="text-white ml-2">05:30 AM</Text>
+              </View>
+
+              <View className="flex-row items-center">
+                <MapPin color="white" size={16} />
+                <Text className="text-white ml-2">Estadio Olímpico</Text>
+              </View>
+            </View>
+          </RevealOnScroll>
+          
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={140} direction="right">
+            <View className="flex-row justify-between">
+              <Button
+                title="INSCRIBIRSE"
+                variant="primary"
+                onPress={() => {
+                  if (!isAuth) router.push('/auth/LoginScreen');
+                  else router.push('/events/TodosEvents');
+                }}
+              />
+              <Link href="/calendario/Calendar" asChild>
+                <Button title="CALENDARIO" variant="secondary" />
+              </Link>
+            </View>
+          </RevealOnScroll>
+        </LinearGradient>
+
+        {/* Características (Adidas-like) */}
+        <View className="py-16 px-4 bg-white"
+          onLayout={(e) => { caracteristicasBaseY.current = e.nativeEvent.layout.y; }}
+        >
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={caracteristicasBaseY.current} direction="left">
+            <SectionTitle className="text-3xl">CARACTERÍSTICAS</SectionTitle>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} baseY={caracteristicasBaseY.current} direction="right">
+            <Text className="text-coffee text-lg leading-7 mt-3">Todo lo que necesitás para correr mejor.</Text>
+          </RevealOnScroll>
+
+          <View className="mt-6">
+            <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={caracteristicasBaseY.current} direction="left">
+              <View className="bg-black rounded-2xl p-5 mb-4 relative overflow-hidden">
+                <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
+                <Text className="text-white text-2xl font-extrabold">Entrenamientos personalizados</Text>
+                <Text className="text-white/80 mt-2 text-lg">Ajustá objetivos y seguí tu progreso día a día.</Text>
+              </View>
+            </RevealOnScroll>
+            <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={80} baseY={caracteristicasBaseY.current} direction="right">
+              <View className="bg-black rounded-2xl p-5 mb-4 relative overflow-hidden">
+                <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
+                <Text className="text-white text-2xl font-extrabold">Desafíos y logros</Text>
+                <Text className="text-white/80 mt-2 text-lg">Motivate con metas semanales y medallas.</Text>
+              </View>
+            </RevealOnScroll>
+            <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={160} baseY={caracteristicasBaseY.current} direction="left">
+              <View className="bg-black rounded-2xl p-5 relative overflow-hidden">
+                <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
+                <Text className="text-white text-2xl font-extrabold">Comunidad y clubes</Text>
+                <Text className="text-white/80 mt-2 text-lg">Unite a la comunidad y corré acompañado.</Text>
+              </View>
+            </RevealOnScroll>
+          </View>
+        </View>
+        
+        {/* Stats Section */}
+        <View className="py-16 px-4 bg-white"
+          onLayout={(e) => { historialBaseY.current = e.nativeEvent.layout.y; }}
+        >
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={historialBaseY.current}>
+            <SectionTitle className="text-3xl">HISTORIAL</SectionTitle>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} baseY={historialBaseY.current}>
+            <Text className="text-black text-xl leading-7 mt-3 font-medium">
+              Nuestras cifras hablan por sí solas: participación, ediciones y distancias que inspiran.
+            </Text>
+          </RevealOnScroll>
+          
+          <View className="mt-6 mb-8">
+            <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={0} baseY={historialBaseY.current} direction="left">
+              <View className="bg-black rounded-2xl p-5 mb-4 relative overflow-hidden">
+                <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
+                <View className="items-center">
+                  <Text className="text-white text-4xl font-extrabold">+15K</Text>
+                  <Text className="text-white/80 text-lg font-medium">Participantes</Text>
+                </View>
+              </View>
+            </RevealOnScroll>
+            <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={80} baseY={historialBaseY.current} direction="right">
+              <View className="bg-black rounded-2xl p-5 mb-4 relative overflow-hidden">
+                <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
+                <View className="items-center">
+                  <Text className="text-white text-4xl font-extrabold">4</Text>
+                  <Text className="text-white/80 text-lg font-medium">Ediciones</Text>
+                </View>
+              </View>
+            </RevealOnScroll>
+            <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={80} baseY={historialBaseY.current} direction="right">
+              <View className="bg-black rounded-2xl p-5 mb-4 relative overflow-hidden">
+                <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
+                <View className="items-center">
+                  <Text className="text-white text-3xl font-extrabold">5K , 10K , 15K</Text>
+                  <Text className="text-white/80 text-lg font-medium">Distancias</Text>
+                </View>
+              </View>
+            </RevealOnScroll>
+          </View>
+          
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={historialBaseY.current}>
+            <View className="bg-white rounded-xl p-5 shadow-md">
+            <View className="flex-row items-center mb-2">
+              <Activity color="#000000" size={20} />
+              <Text className="text-coffee text-2xl font-extrabold ml-2">MEGA CARRERA</Text>
+            </View>
+            <LinearGradient
+              colors={["#000000", "#222222"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={{ height: 3, borderRadius: 9999, width: 160, marginBottom: 10 }}
+            />
+            <Text className="text-coffee text-xl leading-8 font-medium mb-4">
+              Únete a la experiencia más grande de running en la ciudad. 
+              Miles de atletas compitiendo por la gloria y la superación personal.
+            </Text>
+            <TouchableOpacity className="flex-row items-center">
+              <Text className="text-black font-bold text-lg">Más información</Text>
+              <ChevronDown color="#000000" size={16} className="rotate-[-90deg]" />
+            </TouchableOpacity>
+            </View>
+          </RevealOnScroll>
+        </View>
+        
+        {/* Runner Tools */}
+        <View className="py-16 px-4"
+          onLayout={(e) => { herramientasBaseY.current = e.nativeEvent.layout.y; }}
+        >
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={herramientasBaseY.current} direction="left">
+            <SectionTitle className="text-3xl">HERRAMIENTAS PARA CORREDORES</SectionTitle>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} baseY={herramientasBaseY.current} direction="right">
+            <Text className="text-black text-xl leading-7 mt-3 font-medium">
+              Calculá tu ritmo y tu índice de masa corporal para entrenar mejor.
+            </Text>
+          </RevealOnScroll>
+
+          <View className="mt-6">
+            <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={herramientasBaseY.current} direction="left">
+              <Link href="/herramientas/Index" asChild>
+                <TouchableOpacity activeOpacity={0.9} className="bg-black rounded-2xl p-5 mb-4 relative overflow-hidden">
+                  <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
+                  <View className="flex-row items-center">
+                    <Activity color="white" size={24} />
+                    <Text className="text-white text-2xl font-extrabold ml-3">Calculadora de Ritmo</Text>
+                  </View>
+                  <Text className="text-white/80 mt-2 text-lg">Ingresá distancia y tiempo para conocer tu pace por km.</Text>
+                </TouchableOpacity>
+              </Link>
+            </RevealOnScroll>
+
+            <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={80} baseY={herramientasBaseY.current} direction="right">
+              <Link href="/herramientas/Index" asChild>
+                <TouchableOpacity activeOpacity={0.9} className="bg-black rounded-2xl p-5 relative overflow-hidden">
+                  <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
+                  <View className="flex-row items-center">
+                    <Clock color="white" size={24} />
+                    <Text className="text-white text-2xl font-extrabold ml-3">Calculadora de IMC</Text>
+                  </View>
+                  <Text className="text-white/80 mt-2 text-lg">Averiguá tu IMC para ajustar objetivos y cargas.</Text>
+                </TouchableOpacity>
+              </Link>
+            </RevealOnScroll>
+          </View>
+        </View>
+
+        {/* Testimonials removed per request */}
+
+        {/* Past Editions */}
+        <View className="py-16 px-4"
+          onLayout={(e) => { edicionesBaseY.current = e.nativeEvent.layout.y; }}
+        >
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={edicionesBaseY.current} direction="left">
+            <Link href="/ediciones/Index" asChild>
+              <TouchableOpacity>
+                <SectionTitle className="text-3xl">EDICIONES ANTERIORES</SectionTitle>
+              </TouchableOpacity>
+            </Link>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} baseY={edicionesBaseY.current} direction="right">
+            <Text className="text-black text-xl font-semibold leading-8 mt-3">
+              Revive nuestras competencias anteriores, historias y momentos destacados de cada edición.
+            </Text>
+          </RevealOnScroll>
+          
+          <View>
+            {editions.map((edition, index) => (
+              <View key={index} className="w-full mb-3">
+                <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={index * 80} baseY={edicionesBaseY.current} direction={(index % 2 === 0) ? 'left' : 'right'}>
+                  <EditionCard 
+                    id={edition.id}
+                    year={edition.year} 
+                    color={edition.color} 
+                    image={edition.image}
+                    description={edition.description}
+                  />
+                </RevealOnScroll>
+              </View>
+            ))}
+          </View>
+        </View>
+        
+        {/* Sponsors */}
+        <View className="py-16 bg-white"
+          onLayout={(e) => { sponsorsBaseY.current = e.nativeEvent.layout.y; }}
+        >
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={sponsorsBaseY.current} direction="left">
+            <SectionTitle className="text-3xl">PATROCINADORES</SectionTitle>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} baseY={sponsorsBaseY.current} direction="right">
+            <Text className="text-brown text-lg leading-7 mt-3 px-4 text-center">
+              Gracias a quienes hacen posible cada evento. Descubre nuestras marcas aliadas.
+            </Text>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={120} baseY={sponsorsBaseY.current} direction="right">
+            <SponsorCarousel />
+          </RevealOnScroll>
+        </View>
+        
+        {/* Contact section removed to avoid duplication since footer is fixed and larger now */}
+      </ScrollView>
+    </AppShell>
+  );
+}
