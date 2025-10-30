@@ -2,11 +2,14 @@ import { usePathname, useRouter } from 'expo-router';
 import { Newspaper, User, Wrench, Zap } from 'lucide-react-native';
 import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
+import { useAuth } from '../../../context/AuthContext';
 
 // Bottom navigation bar: Noticias, Actividad, Herramientas, Perfil
 export default function AppFooter() {
   const pathname = usePathname();
   const router = useRouter();
+  const { user } = useAuth();
+  const isPrivileged = user?.role === 'admin' || user?.role === 'superadmin';
 
   const Tab = ({
     label,
@@ -54,30 +57,49 @@ export default function AppFooter() {
         paddingHorizontal: 8,
       }}
     >
-      <Tab
-        label="Noticias"
-        active={!!isNoticias}
-        onPress={() => router.replace('/')}
-        icon={<Newspaper color={isNoticias ? '#111' : '#9CA3AF'} size={22} />}
-      />
-      <Tab
-        label="Actividad"
-        active={!!isActividad}
-        onPress={() => router.replace('/actividad/Index')}
-        icon={<Zap color={isActividad ? '#111' : '#9CA3AF'} size={22} />}
-      />
-      <Tab
-        label="Herramientas"
-        active={!!isHerramientas}
-        onPress={() => router.replace('/herramientas/Index')}
-        icon={<Wrench color={isHerramientas ? '#111' : '#9CA3AF'} size={22} />}
-      />
-      <Tab
-        label="Perfil"
-        active={!!isPerfil}
-        onPress={() => router.replace('/profile/profile')}
-        icon={<User color={isPerfil ? '#111' : '#9CA3AF'} size={22} />}
-      />
+      {isPrivileged ? (
+        <>
+          <Tab
+            label="Noticias"
+            active={!!isNoticias}
+            onPress={() => router.replace('/?from=footer')}
+            icon={<Newspaper color={isNoticias ? '#111' : '#9CA3AF'} size={22} />}
+          />
+          <Tab
+            label="Perfil"
+            active={!!isPerfil || pathname?.startsWith('/admin/AdminProfile')}
+            onPress={() => router.replace('/admin/AdminProfile')}
+            icon={<User color={(isPerfil || pathname?.startsWith('/admin/AdminProfile')) ? '#111' : '#9CA3AF'} size={22} />}
+          />
+        </>
+      ) : (
+        <>
+          <Tab
+            label="Noticias"
+            active={!!isNoticias}
+            onPress={() => router.replace('/')}
+            icon={<Newspaper color={isNoticias ? '#111' : '#9CA3AF'} size={22} />}
+          />
+          <Tab
+            label="Actividad"
+            active={!!isActividad}
+            onPress={() => router.replace('/actividad/Index')}
+            icon={<Zap color={isActividad ? '#111' : '#9CA3AF'} size={22} />}
+          />
+          <Tab
+            label="Herramientas"
+            active={!!isHerramientas}
+            onPress={() => router.replace('/herramientas/Index')}
+            icon={<Wrench color={isHerramientas ? '#111' : '#9CA3AF'} size={22} />}
+          />
+          <Tab
+            label="Perfil"
+            active={!!isPerfil}
+            onPress={() => router.replace('/profile/profile')}
+            icon={<User color={isPerfil ? '#111' : '#9CA3AF'} size={22} />}
+          />
+        </>
+      )}
     </View>
   );
 }

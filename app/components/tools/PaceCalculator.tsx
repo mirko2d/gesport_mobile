@@ -48,7 +48,7 @@ export default function PaceCalculator() {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [headerAnim]);
 
   useEffect(() => {
     resultAnim.setValue(0);
@@ -58,7 +58,7 @@ export default function PaceCalculator() {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [paceSecPerKm, distanceKm, h, m, s]);
+  }, [paceSecPerKm, distanceKm, h, m, s, resultAnim]);
 
   const headerStyle = {
     opacity: headerAnim,

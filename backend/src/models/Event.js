@@ -11,6 +11,7 @@ const EventSchema = new mongoose.Schema(
     cupos: Number,
     precio: Number,
     activo: { type: Boolean, default: true },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }
 );

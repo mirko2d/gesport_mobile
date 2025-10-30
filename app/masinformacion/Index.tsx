@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Calendar, Clock, LogIn, MapPin, Trophy, User, UserPlus, Users } from 'lucide-react-native';
+import { Calendar, Clock, MapPin, Trophy, User, Users } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
-import { Alert, Dimensions, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Dimensions, Image, ScrollView, Text, View } from 'react-native';
 import AppShell from '../components/AppShell';
 import Button from '../components/ui/Button';
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const { authRequired, requireRole } = require('../middleware/auth');
 const Event = require('../models/Event');
+const Enrollment = require('../models/Enrollment');
 
 const router = express.Router();
 
@@ -8,16 +9,28 @@ const router = express.Router();
 router.get('/', async (req, res, next) => {
   try {
     const events = await Event.find({ activo: true }).sort({ fecha: 1 }).lean();
-    res.json(events);
+    // Adjuntar cantidad de inscriptos y maxParticipantes (alias de cupos)
+    const withCounts = await Promise.all(
+      events.map(async (ev) => {
+        const count = await Enrollment.countDocuments({ event: ev._id });
+        return {
+          ...ev,
+          participantes: count,
+          maxParticipantes: typeof ev.cupos === 'number' ? ev.cupos : null,
+        };
+      })
+    );
+    res.json(withCounts);
   } catch (e) {
     next(e);
   }
 });
 
-// Crear evento (admin)
-router.post('/', authRequired, requireRole(['admin', 'superadmin']), async (req, res, next) => {
+// Crear evento (solo superadmin)
+router.post('/', authRequired, requireRole(['superadmin']), async (req, res, next) => {
   try {
-    const event = await Event.create(req.body || {});
+    const payload = { ...(req.body || {}), createdBy: req.user._id };
+    const event = await Event.create(payload);
     res.status(201).json(event);
   } catch (e) {
     next(e);
@@ -25,7 +38,8 @@ router.post('/', authRequired, requireRole(['admin', 'superadmin']), async (req,
 });
 
 // Eliminar evento (admin)
-router.delete('/delete/:id', authRequired, requireRole(['admin', 'superadmin']), async (req, res, next) => {
+// Eliminar evento: solo superadmin
+router.delete('/delete/:id', authRequired, requireRole(['superadmin']), async (req, res, next) => {
   try {
     const { id } = req.params;
     await Event.findByIdAndDelete(id);
@@ -36,3 +50,41 @@ router.delete('/delete/:id', authRequired, requireRole(['admin', 'superadmin']),
 });
 
 module.exports = router;
+// Obtener un evento por ID (público)
+router.get('/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const ev = await Event.findById(id).lean();
+    if (!ev || ev.activo === false) return res.status(404).json({ error: 'Evento no encontrado' });
+    const count = await Enrollment.countDocuments({ event: ev._id });
+    return res.json({
+      ...ev,
+      participantes: count,
+      maxParticipantes: typeof ev.cupos === 'number' ? ev.cupos : null,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+// Actualizar evento (solo superadmin)
+router.patch('/:id', authRequired, requireRole(['superadmin']), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const update = req.body || {};
+    const ev = await Event.findByIdAndUpdate(id, update, { new: true });
+    if (!ev) return res.status(404).json({ error: 'Evento no encontrado' });
+    res.json(ev);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// List my own events (superadmin)
+router.get('/mine', authRequired, requireRole(['superadmin']), async (req, res, next) => {
+  try {
+    const events = await Event.find({ createdBy: req.user._id }).sort({ createdAt: -1 }).lean();
+    res.json(events);
+  } catch (e) {
+    next(e);
+  }
+});

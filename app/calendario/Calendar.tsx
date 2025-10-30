@@ -5,19 +5,19 @@ import {
     ChevronRight,
     MapPin,
 } from 'lucide-react-native';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-    Dimensions,
     Pressable,
     ScrollView,
     Text,
     TouchableOpacity,
     View,
 } from 'react-native';
+import { listEvents } from '../../lib/api';
 import AppShell from '../components/AppShell';
 import Button from '../components/ui/Button';
 
-const { width } = Dimensions.get('window');
+// removed unused width
 
 // Mock data for current month (dinámico para que los filtros ± funcionen hoy)
 const buildMockCalendarEvents = (
@@ -123,11 +123,13 @@ const addDays = (dateStr: string, days: number) => {
 export default function CalendarScreen() {
   const router = useRouter();
   const today = new Date();
-  const todayStr = formatDate(today.getFullYear(), today.getMonth(), today.getDate());
-  const currentYear = today.getFullYear();
+  const y = today.getFullYear();
+  const m = today.getMonth();
+  const todayStr = formatDate(y, m, today.getDate());
+  const currentYear = y;
   const mockCalendarEvents = useMemo(
-    () => buildMockCalendarEvents(today.getFullYear(), today.getMonth()),
-    [todayStr]
+    () => buildMockCalendarEvents(y, m),
+    [y, m]
   );
 
   const [currentDate, setCurrentDate] = useState({
@@ -135,6 +137,8 @@ export default function CalendarScreen() {
     month: today.getMonth(),
   });
   const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [marathonDateStr, setMarathonDateStr] = useState<string | null>(null);
+  const [eventsMap, setEventsMap] = useState<Record<string, { id: string; title: string; time: string; location: string }[]>>({});
 
   // Nuevo: rango configurable
   const [rangeDays, setRangeDays] = useState<1 | 3 | 7>(3);
@@ -145,15 +149,57 @@ export default function CalendarScreen() {
 
   // Calendar cells
   const calendarDays = useMemo(() => {
+    const sourceMap = Object.keys(eventsMap).length ? eventsMap : mockCalendarEvents;
     const days: ({ day: number; dateStr: string; hasEvents: boolean } | null)[] = [];
     for (let i = 0; i < firstDayOfMonth; i++) days.push(null);
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = formatDate(currentDate.year, currentDate.month, day);
-      const hasEvents = !!mockCalendarEvents[dateStr]?.length;
+      const hasEvents = !!sourceMap[dateStr]?.length;
       days.push({ day, dateStr, hasEvents });
     }
     return days;
-  }, [firstDayOfMonth, daysInMonth, currentDate]);
+  }, [firstDayOfMonth, daysInMonth, currentDate, mockCalendarEvents, eventsMap]);
+
+  // Cargar eventos reales: marcar próximo evento y construir mapa de eventos por día
+  useEffect(() => {
+    (async () => {
+      try {
+        const data: any[] = await listEvents();
+        const items = Array.isArray(data) ? data : [];
+        // Construir mapa YYYY-MM-DD -> eventos
+        const map: Record<string, { id: string; title: string; time: string; location: string }[]> = {};
+        items.forEach((e) => {
+          if (!e?.fecha) return;
+          const dt = new Date(e.fecha as string);
+          if (isNaN(dt.getTime())) return;
+          const key = formatDate(dt.getFullYear(), dt.getMonth(), dt.getDate());
+          const title = e.titulo || e.nombre || 'Evento';
+          const time = dt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+          const location = e.lugar || e.ubicacion || 'Ubicación a confirmar';
+          if (!map[key]) map[key] = [];
+          map[key].push({ id: e._id, title, time, location });
+        });
+        setEventsMap(map);
+        const now = Date.now();
+        const upcoming = items
+          .filter((e) => e.fecha)
+          .map((e) => ({ ...e, ts: new Date(e.fecha as string).getTime() }))
+          .filter((e) => !isNaN(e.ts))
+          .sort((a, b) => a.ts - b.ts)
+          .find((e) => e.ts >= now) || null;
+        if (upcoming?.fecha) {
+          const dt = new Date(upcoming.fecha);
+          const mark = formatDate(dt.getFullYear(), dt.getMonth(), dt.getDate());
+          setMarathonDateStr(mark);
+        } else {
+          setMarathonDateStr(null);
+        }
+      } catch {
+        setMarathonDateStr(null);
+        setEventsMap({});
+      }
+    })();
+  }, []);
 
   const goToPreviousMonth = () => {
     setCurrentDate(({ year, month }) =>
@@ -169,10 +215,14 @@ export default function CalendarScreen() {
   const isSelectedDate = (dateStr: string) => dateStr === selectedDate;
   const isToday = (dateStr: string) => dateStr === todayStr;
 
-  const eventsForSelectedDate = mockCalendarEvents[selectedDate] || [];
+  const eventsForSelectedDate = useMemo(() => {
+    const sourceMap = Object.keys(eventsMap).length ? eventsMap : mockCalendarEvents;
+    return sourceMap[selectedDate] || [];
+  }, [selectedDate, mockCalendarEvents, eventsMap]);
 
   // Eventos cercanos (±rangeDays) a la fecha seleccionada
   const nearbyEvents = useMemo(() => {
+    const sourceMap = Object.keys(eventsMap).length ? eventsMap : mockCalendarEvents;
     const list: {
       date: string;
       delta: number;
@@ -181,16 +231,16 @@ export default function CalendarScreen() {
       time: string;
       location: string;
     }[] = [];
-    Object.keys(mockCalendarEvents).forEach((date) => {
+    Object.keys(sourceMap).forEach((date) => {
       const delta = diffInDays(date, selectedDate); // + futuro / - pasado
       if (date !== selectedDate && Math.abs(delta) <= rangeDays) {
-        mockCalendarEvents[date].forEach((ev) =>
+        sourceMap[date].forEach((ev) =>
           list.push({ date, delta, ...ev }),
         );
       }
     });
     return list.sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta));
-  }, [selectedDate, rangeDays]);
+  }, [selectedDate, rangeDays, mockCalendarEvents, eventsMap]);
 
   // Filtros rápidos
   const goToday = () => {
@@ -252,6 +302,8 @@ export default function CalendarScreen() {
                     ? 'bg-primary'
                     : isToday(day.dateStr)
                     ? 'bg-white border border-primary/30'
+                    : marathonDateStr === day.dateStr
+                    ? 'bg-white border-2 border-[#00E676]'
                     : ''
                 }`}
                 onPress={() => setSelectedDate(day.dateStr)}
@@ -262,6 +314,8 @@ export default function CalendarScreen() {
                       ? 'text-white'
                       : isToday(day.dateStr)
                       ? 'text-primary'
+                      : marathonDateStr === day.dateStr
+                      ? 'text-[#00C853]'
                       : 'text-gray-700'
                   } font-medium`}
                 >

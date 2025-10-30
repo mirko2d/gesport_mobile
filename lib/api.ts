@@ -99,10 +99,14 @@ export const setUserRole = async (
 
 // ====== Eventos ======
 export const listEvents = async () => (await api.get("/events/")).data;
+export const getEvent = async (id: string) => (await api.get(`/events/${id}`)).data;
+export const listMyEvents = async () => (await api.get("/events/mine")).data;
 export const createEvent = async (payload: any) =>
   (await api.post("/events/", payload)).data;
 export const deleteEvent = async (id: string) =>
   (await api.delete(`/events/delete/${id}`)).data;
+export const updateEvent = async (id: string, payload: any) =>
+  (await api.patch(`/events/${id}`, payload)).data;
 
 // ====== Inscripciones ======
 // El back maneja campos estilo DB: usuario_id / evento_id
@@ -118,6 +122,9 @@ export const unenroll = async (event_id: string) =>
 
 export const myEnrollments = async () =>
   (await api.get("/enrollments/mine")).data;
+
+export const listEventParticipants = async (event_id: string) =>
+  (await api.get(`/enrollments/event/${event_id}`)).data as { count: number; participants: Array<{ _id: string; nombre?: string; apellido?: string; email?: string; avatarUrl?: string }> };
 
 // ====== Resultados ======
 export const myResults = async () => (await api.get("/results/mine")).data;
@@ -140,3 +147,14 @@ export const uploadAvatar = async (uri: string) => {
   const { data } = await api.post('/upload/avatar', form);
   return data as { url: string };
 };
+
+// ====== News ======
+export const listNews = async () => (await api.get('/news')).data as Array<{
+  _id: string; title: string; content: string; imageUrl?: string; createdAt: string;
+}>;
+export const listMyNews = async () => (await api.get('/news/mine')).data as Array<{
+  _id: string; title: string; content: string; imageUrl?: string; createdAt: string; published?: boolean;
+}>;
+export const createNews = async (payload: { title: string; content: string; imageUrl?: string; published?: boolean; }) =>
+  (await api.post('/news', payload)).data;
+export const deleteNews = async (id: string) => (await api.delete(`/news/${id}`)).data;

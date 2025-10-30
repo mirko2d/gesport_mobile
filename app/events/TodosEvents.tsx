@@ -3,7 +3,7 @@ import { Calendar, MapPin, Search, Users } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Image, Modal, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { baseURL, enroll, listEvents } from '../../lib/api';
+import { baseURL, enroll, listEventParticipants, listEvents, myEnrollments } from '../../lib/api';
 import AppShell from '../components/AppShell';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
@@ -12,14 +12,18 @@ const { width } = Dimensions.get('window');
 /** ===== Tipos ===== */
 type ApiEvent = {
   _id: string;
-  nombre: string;
+  nombre?: string;            // compat nombres antiguos
+  titulo?: string;            // backend actual
   fecha?: string;                 // ISO o fecha en texto
   ubicacion?: string;
+  lugar?: string;             // backend actual
   categoria?: string;
   image?: string;                 // opcional en backend
+  afiche?: string;             // backend actual
   hora?: string;                  // si tu backend la maneja aparte
-  participantes?: number;         // si lo agregas luego
-  maxParticipantes?: number;      // si lo agregas luego
+  participantes?: number;         // agregado en events.get
+  maxParticipantes?: number;      // agregado en events.get
+  cupos?: number;                 // backend actual
 };
 
 type UiEvent = {
@@ -31,6 +35,8 @@ type UiEvent = {
   category: string;
   image: string;
   participantsText: string; // “X / Y” o descriptivo
+  participantsCount?: number;
+  maxParticipants?: number | null;
 };
 
 const PLACEHOLDER_IMG =
@@ -42,19 +48,21 @@ function mapToUi(ev: ApiEvent): UiEvent {
   const dateStr = dt ? dt.toLocaleDateString() : 'Fecha a confirmar';
   const timeStr = ev.hora ?? (dt ? dt.toLocaleTimeString().slice(0, 5) : '—');
   const participantsText =
-    ev.participantes != null && ev.maxParticipantes != null
-      ? `${ev.participantes} / ${ev.maxParticipantes}`
+    ev.participantes != null && (ev.maxParticipantes != null || ev.cupos != null)
+      ? `${ev.participantes} / ${ev.maxParticipantes ?? ev.cupos}`
       : 'Cupos variables';
 
   return {
     id: ev._id,
-    title: ev.nombre ?? 'Evento',
+    title: ev.nombre ?? ev.titulo ?? 'Evento',
     date: dateStr,
     time: timeStr,
-    location: ev.ubicacion ?? 'Ubicación a confirmar',
+    location: ev.ubicacion ?? ev.lugar ?? 'Ubicación a confirmar',
     category: ev.categoria ?? 'General',
-    image: ev.image ?? PLACEHOLDER_IMG,
+    image: ev.image ?? ev.afiche ?? PLACEHOLDER_IMG,
     participantsText,
+    participantsCount: ev.participantes,
+    maxParticipants: ev.maxParticipantes ?? (ev.cupos != null ? ev.cupos : null),
   };
 }
 
@@ -68,7 +76,12 @@ export default function AllEventsScreen() {
   const [enrollModalOpen, setEnrollModalOpen] = useState<boolean>(false);
   const [enrolling, setEnrolling] = useState<boolean>(false);
   const [selectedEvent, setSelectedEvent] = useState<UiEvent | null>(null);
+  const [participantsModalOpen, setParticipantsModalOpen] = useState<boolean>(false);
+  const [participantsLoading, setParticipantsLoading] = useState<boolean>(false);
+  const [participants, setParticipants] = useState<Array<{ _id: string; nombre?: string; apellido?: string; email?: string; avatarUrl?: string }>>([]);
+  const [enrolledEventIds, setEnrolledEventIds] = useState<Set<string>>(new Set());
   const { isAuth, user } = useAuth();
+  const isPrivileged = user?.role === 'admin' || user?.role === 'superadmin';
 
   // Campos opcionales para mostrar en el formulario (no requeridos por el backend actual)
   const [fullName, setFullName] = useState<string>('');
@@ -117,6 +130,28 @@ export default function AllEventsScreen() {
     }
   }, [isAuth, user]);
 
+  // Cargar mis inscripciones para mostrar "Inscripto" y bloquear el botón
+  useEffect(() => {
+    (async () => {
+      if (!isAuth) {
+        setEnrolledEventIds(new Set());
+        return;
+      }
+      try {
+        const list: any[] = await myEnrollments();
+        const ids = new Set<string>();
+        (list || []).forEach((it: any) => {
+          const ev = it?.event;
+          const id = typeof ev === 'string' ? ev : ev?._id;
+          if (id) ids.add(id);
+        });
+        setEnrolledEventIds(ids);
+      } catch {
+        setEnrolledEventIds(new Set());
+      }
+    })();
+  }, [isAuth]);
+
   /** Categorías únicas */
   const categories = useMemo<string[]>(
     () => ['Todos', ...Array.from(new Set(events.map((e) => e.category)))],
@@ -149,14 +184,39 @@ export default function AllEventsScreen() {
     }
     try {
       setEnrolling(true);
-      await enroll(selectedEvent.id);
+  await enroll(selectedEvent.id);
       setEnrollModalOpen(false);
       Alert.alert('Inscripción completada', `Te inscribiste a ${selectedEvent.title}.`);
-    } catch (e) {
-      console.log('Error al inscribirse:', e);
-      Alert.alert('Error', 'No se pudo completar la inscripción. Intenta nuevamente.');
+      loadEvents();
+  setEnrolledEventIds((prev) => new Set<string>([...prev, selectedEvent.id]));
+    } catch (err) {
+      const e = err as any;
+      console.log('Error al inscribirse:', e?.response?.data || e?.message || e);
+      if (e?.response?.status === 409 && e?.response?.data?.error === 'Cupo completo') {
+        Alert.alert('Cupo completo', 'Este evento alcanzó el límite de inscripciones.');
+      } else if (e?.response?.status === 409) {
+        Alert.alert('Ya estás inscripto', 'Tu inscripción ya existe para este evento.');
+        if (selectedEvent) {
+          setEnrolledEventIds((prev) => new Set<string>([...prev, selectedEvent.id]));
+        }
+      } else {
+        Alert.alert('Error', 'No se pudo completar la inscripción. Intenta nuevamente.');
+      }
     } finally {
       setEnrolling(false);
+    }
+  };
+
+  const openParticipants = async (event: UiEvent) => {
+    try {
+      setParticipantsModalOpen(true);
+      setParticipantsLoading(true);
+      const data = await listEventParticipants(event.id);
+      setParticipants(data.participants || []);
+    } catch (e) {
+      setParticipants([]);
+    } finally {
+      setParticipantsLoading(false);
     }
   };
 
@@ -228,15 +288,22 @@ export default function AllEventsScreen() {
             <Text className="text-gray-500 mt-4">Cargando eventos...</Text>
           </View>
         ) : filteredEvents.length > 0 ? (
-          filteredEvents.map((event) => (
+          filteredEvents.map((event) => {
+            const isFull =
+              typeof event.maxParticipants === 'number' &&
+              typeof event.participantsCount === 'number' &&
+              event.maxParticipants > 0 &&
+              event.participantsCount >= event.maxParticipants;
+            const isEnrolled = enrolledEventIds.has(event.id);
+            return (
             <Card
               key={event.id}
-              className="rounded-2xl mb-4 overflow-hidden"
+              className="rounded-lg mb-4 overflow-hidden"
             >
               <Image
                 source={{ uri: event.image }}
                 style={{ width: width - 32, height: 160 }}
-                className="rounded-t-2xl"
+                className="rounded-t-lg"
                 resizeMode="cover"
               />
               <View className="p-4">
@@ -271,13 +338,25 @@ export default function AllEventsScreen() {
                   </View>
 
                   <View className="flex-row gap-2">
-                    <Button title="Inscribirme" onPress={() => openEnrollForm(event)} />
-                    <Button title="Ver detalles" variant="outline" onPress={() => {}} />
+                    {isPrivileged ? (
+                      <Button title="Inscriptos" variant="outline" onPress={() => openParticipants(event)} />
+                    ) : null}
+                    <Button
+                      title={isEnrolled ? 'Inscripto' : isFull ? 'Cupos llenos' : 'Inscribirme'}
+                      onPress={() => openEnrollForm(event)}
+                      disabled={isFull || isEnrolled}
+                    />
+                    <Button
+                      title="Ver detalles"
+                      variant="outline"
+                      onPress={() => router.push({ pathname: '/events/[id]', params: { id: event.id } })}
+                    />
                   </View>
                 </View>
               </View>
             </Card>
-          ))
+            );
+          })
         ) : (
           <View className="flex-1 items-center justify-center py-12">
             <Calendar color="#9ca3af" size={48} />
@@ -412,6 +491,50 @@ export default function AllEventsScreen() {
               </View>
             </>
           )}
+        </View>
+      </View>
+    </Modal>
+
+    {/* Modal de inscriptos */}
+    <Modal
+      visible={participantsModalOpen}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setParticipantsModalOpen(false)}
+    >
+      <View className="flex-1 bg-black/60 items-center justify-center px-6">
+        <View className="bg-white rounded-2xl w-full p-5 max-h-[70%]">
+          <Text className="text-lg font-bold text-gray-900 mb-3">Personas inscriptas</Text>
+          {participantsLoading ? (
+            <View className="py-6 items-center">
+              <ActivityIndicator />
+              <Text className="text-gray-600 mt-2">Cargando…</Text>
+            </View>
+          ) : participants.length === 0 ? (
+            <Text className="text-gray-700">No hay inscriptos por ahora.</Text>
+          ) : (
+            <ScrollView className="max-h-[60%]">
+              {participants.map((p) => (
+                <View key={p._id} className="flex-row items-center py-2 border-b border-gray-100">
+                  <View className="w-9 h-9 rounded-full bg-gray-200 items-center justify-center mr-3">
+                    <Text className="text-gray-700 font-semibold">
+                      {(p.nombre?.[0] || '').toUpperCase()}
+                      {(p.apellido?.[0] || '').toUpperCase()}
+                    </Text>
+                  </View>
+                  <View>
+                    <Text className="text-gray-900 font-medium">{[p.nombre, p.apellido].filter(Boolean).join(' ') || 'Usuario'}</Text>
+                    {p.email ? <Text className="text-gray-600 text-xs">{p.email}</Text> : null}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+          <View className="flex-row justify-end mt-4">
+            <TouchableOpacity className="px-4 py-2 rounded-lg bg-gray-900" onPress={() => setParticipantsModalOpen(false)}>
+              <Text className="text-white font-medium">Cerrar</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>

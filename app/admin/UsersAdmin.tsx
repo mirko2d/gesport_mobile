@@ -22,9 +22,10 @@ export default function UsersAdmin() {
   const [rows, setRows] = useState<UserDoc[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const isSuperadmin = user?.role === 'superadmin';
+  const isAdminOrSuper = isSuperadmin || user?.role === 'admin';
 
   useEffect(() => {
-    if (!isSuperadmin) {
+    if (!isAdminOrSuper) {
       // si no es superadmin, reenvía fuera
       router.replace('/profile/profile');
       return;
@@ -32,7 +33,7 @@ export default function UsersAdmin() {
     (async () => {
       try {
         setLoading(true);
-        const data: UserDoc[] = await listUsersAdmin();
+  const data: UserDoc[] = await listUsersAdmin();
         setRows(Array.isArray(data) ? data : []);
       } catch (e: any) {
         Alert.alert('Error', e?.response?.data?.error || e?.message || 'No se pudo cargar usuarios');
@@ -40,7 +41,7 @@ export default function UsersAdmin() {
         setLoading(false);
       }
     })();
-  }, [isSuperadmin]);
+  }, [isAdminOrSuper, isSuperadmin, router]);
 
   const fullName = (u: UserDoc) => [u.nombre, u.apellido].filter(Boolean).join(' ') || u.email;
 
@@ -89,22 +90,24 @@ export default function UsersAdmin() {
               </View>
 
               {/* Botones */}
-              <View className="flex-row gap-2 mt-3">
-                {u.role !== 'admin' && u.role !== 'superadmin' ? (
-                  <Button
-                    title={busyId === u._id ? 'Aplicando...' : 'Hacer admin'}
-                    onPress={() => onPromote(u)}
-                  />
-                ) : null}
+              {isSuperadmin ? (
+                <View className="flex-row gap-2 mt-3">
+                  {u.role !== 'admin' && u.role !== 'superadmin' ? (
+                    <Button
+                      title={busyId === u._id ? 'Aplicando...' : 'Hacer admin'}
+                      onPress={() => onPromote(u)}
+                    />
+                  ) : null}
 
-                {u.role === 'admin' ? (
-                  <Button
-                    title={busyId === u._id ? 'Aplicando...' : 'Quitar admin'}
-                    variant="outline"
-                    onPress={() => onDemote(u)}
-                  />
-                ) : null}
-              </View>
+                  {u.role === 'admin' ? (
+                    <Button
+                      title={busyId === u._id ? 'Aplicando...' : 'Quitar admin'}
+                      variant="outline"
+                      onPress={() => onDemote(u)}
+                    />
+                  ) : null}
+                </View>
+              ) : null}
             </Card>
           ))}
 

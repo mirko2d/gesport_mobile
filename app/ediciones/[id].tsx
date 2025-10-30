@@ -16,7 +16,7 @@ const screenWidth = Dimensions.get('window').width;
 export default function EditionDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const [edition, setEdition] = useState<EditionItem | undefined>(undefined);
-  const [marathons, setMarathons] = useState<Array<{ title: string; distance: string; time?: string; location?: string; date?: string }>>([]);
+  const [marathons, setMarathons] = useState<{ title: string; distance: string; time?: string; location?: string; date?: string }[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -28,7 +28,7 @@ export default function EditionDetailScreen() {
           setEdition(mapApiEditionToItem(data));
           return;
         }
-      } catch (e) {
+      } catch {
         // fallback local
       }
       setEdition(getEditionById(id));

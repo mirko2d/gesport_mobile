@@ -32,6 +32,26 @@ async function seed() {
     console.log('SUPERADMIN_EMAIL y/o SUPERADMIN_PASSWORD no definidos; no se creó superadmin.');
   }
 
+  // Admin desde variables de entorno (opcional)
+  const adEmail = process.env.ADMIN_EMAIL;
+  const adPass = process.env.ADMIN_PASSWORD;
+  const adNombre = process.env.ADMIN_NAME || 'Admin';
+  const adApellido = process.env.ADMIN_LASTNAME || 'App';
+  if (adEmail && adPass) {
+    let ad = await User.findOne({ email: adEmail });
+    if (!ad) {
+      ad = await User.create({ nombre: adNombre, apellido: adApellido, email: adEmail, contrasenia: adPass, role: 'admin' });
+      console.log('Admin creado:', adEmail);
+    } else {
+      ad.nombre = adNombre;
+      ad.apellido = adApellido;
+      ad.role = 'admin';
+      ad.contrasenia = adPass;
+      await ad.save();
+      console.log('Admin actualizado:', adEmail);
+    }
+  }
+
   // Usuarios demo opcionales (solo si SEED_DEMO_USERS=1)
   if (process.env.SEED_DEMO_USERS === '1') {
     const demos = [

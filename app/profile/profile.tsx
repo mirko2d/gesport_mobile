@@ -46,7 +46,7 @@ export default function ProfileScreen() {
   const [enrollments, setEnrollments] = useState<EnrollmentDoc[]>([]);
   const [results, setResults] = useState<ResultDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [localRuns, setLocalRuns] = useState<Array<{ id: string; date: string; elapsedMs: number; distanceM: number }>>([]);
+  const [localRuns, setLocalRuns] = useState<{ id: string; date: string; elapsedMs: number; distanceM: number }[]>([]);
 
   const isSuperadmin = authUser?.role === 'superadmin';
   const isAdmin = authUser?.role === 'admin' || isSuperadmin;
@@ -89,6 +89,11 @@ export default function ProfileScreen() {
       router.replace('/auth/LoginScreen');
       return;
     }
+    // Si es superadmin, dirigirlo al panel minimalista
+    if (authUser?.role === 'superadmin') {
+      router.replace('/admin/AdminProfile');
+      return;
+    }
     // Refresca datos y carga perfil
     (async () => {
       try {
@@ -98,7 +103,7 @@ export default function ProfileScreen() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuth]);
+  }, [isAuth, authUser?.role]);
 
   // Cuando vuelves a Perfil desde otra pestaña, recarga actividades locales
   useFocusEffect(
@@ -113,7 +118,7 @@ export default function ProfileScreen() {
           setLocalRuns(mapped);
           // Reaplicar avatar local si existe
           const localAvatar = await AsyncStorage.getItem('@gesport:profile:avatarUrl');
-          if (localAvatar && profile) setProfile({ ...profile, avatarUrl: localAvatar });
+            if (localAvatar) setProfile((prev) => (prev ? { ...prev, avatarUrl: localAvatar } : prev));
         } catch {}
       })();
     }, [])
@@ -270,6 +275,37 @@ export default function ProfileScreen() {
             })()}
           </View>
 
+          {/* Acceso Admin (oculto a usuarios normales) */}
+          {isAdmin ? (
+            <View className="px-6 mt-6">
+              <Text className="text-black text-xl font-extrabold">ADMIN</Text>
+              <View className="flex-row gap-x-3 mt-3">
+                <TouchableOpacity
+                  onPress={() => router.push('/admin/EventsAdmin')}
+                  className="flex-1 bg-white rounded-xl px-4 py-3 items-center border border-gray-200"
+                >
+                  <Text className="text-gray-800 mt-1">Administrar eventos</Text>
+                </TouchableOpacity>
+              </View>
+              {isSuperadmin ? (
+                <View className="flex-row gap-x-3 mt-3">
+                  <TouchableOpacity
+                    onPress={() => router.push('/admin/NewsAdmin')}
+                    className="flex-1 bg-white rounded-xl px-4 py-3 items-center border border-gray-200"
+                  >
+                    <Text className="text-gray-800 mt-1">Administrar noticias</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => router.push('/admin/UsersAdmin')}
+                    className="flex-1 bg-white rounded-xl px-4 py-3 items-center border border-gray-200"
+                  >
+                    <Text className="text-gray-800 mt-1">Administrar usuarios</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
           {/* Acciones rápidas */}
           <View className="px-6 mt-4">
             {/* Peso y altura del perfil */}
@@ -305,6 +341,17 @@ export default function ProfileScreen() {
               >
                 <ActivityIcon color="#111" size={20} />
                 <Text className="text-gray-800 mt-2">Explorar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          {/* Enlace público a Noticias */}
+          <View className="px-6 mt-3">
+            <View className="flex-row gap-x-3">
+              <TouchableOpacity
+                onPress={() => router.push('/noticias/Index')}
+                className="flex-1 bg-white rounded-xl px-4 py-3 items-center border border-gray-200"
+              >
+                <Text className="text-gray-800 mt-2">Noticias</Text>
               </TouchableOpacity>
             </View>
           </View>

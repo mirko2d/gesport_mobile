@@ -43,7 +43,7 @@ export default function LoginScreen() {
   // Si la sesión ya existe, redirige al inicio (Home) donde verás tu barra de perfil arriba
   useEffect(() => {
     if (isAuth) router.replace('/');
-  }, [isAuth]);
+  }, [isAuth, router]);
 
   const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));

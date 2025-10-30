@@ -10,9 +10,9 @@ router.get('/me', authRequired, async (req, res) => {
 
 // Admin: listar usuarios
 router.get('/', authRequired, async (req, res) => {
-  // Solo superadmin ve la lista completa; otros ven solo su propio usuario
+  // Admin y superadmin ven lista completa; usuarios ven solo su propio usuario
   const u = req.user;
-  if (u.role === 'superadmin') {
+  if (u.role === 'admin' || u.role === 'superadmin') {
     const users = await require('../models/User').find().select('-contrasenia').lean();
     return res.json(users);
   }

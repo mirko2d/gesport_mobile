@@ -29,6 +29,20 @@ router.post('/signin', async (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
     const ok = await user.comparePassword(contrasenia);
     if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
+
+    // Enforce special roles based on env emails (useful if la cuenta fue creada por signup como role 'user')
+    const SA_EMAIL = process.env.SUPERADMIN_EMAIL;
+    const AD_EMAIL = process.env.ADMIN_EMAIL;
+    let roleChanged = false;
+    if (SA_EMAIL && email === SA_EMAIL && user.role !== 'superadmin') {
+      user.role = 'superadmin';
+      roleChanged = true;
+    } else if (AD_EMAIL && email === AD_EMAIL && user.role !== 'admin' && user.role !== 'superadmin') {
+      user.role = 'admin';
+      roleChanged = true;
+    }
+    if (roleChanged) await user.save();
+
     const token = signToken(user);
     const userSafe = {
       _id: user._id,

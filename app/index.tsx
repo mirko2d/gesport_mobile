@@ -1,16 +1,19 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  Activity,
-  Calendar,
-  ChevronDown,
-  Clock,
-  MapPin
+    Activity,
+    Calendar,
+    ChevronDown,
+    Clock,
+    MapPin,
+    Newspaper
 } from 'lucide-react-native';
 import { cssInterop } from 'nativewind';
-import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Easing, FlatList, Image, ImageSourcePropType, Linking, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Dimensions, Easing, FlatList, Image, ImageSourcePropType, Linking, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { listEvents, listNews } from '../lib/api';
 import { PAST_EDITIONS } from '../lib/editions';
 import { SPONSORS, type SponsorItem } from '../lib/sponsors';
 import AppShell from './components/AppShell';
@@ -23,7 +26,6 @@ cssInterop(LinearGradient, {
 });
 
 const { width } = Dimensions.get('window');
-const ACCENT = '#00E676'; // adidas-like green accent
 
 // Simple reveal-on-scroll wrapper
 function RevealOnScroll({
@@ -196,7 +198,7 @@ function SponsorCarousel({ items = SPONSORS, autoPlayInterval = 2500 }: { items?
         didInit.current = true;
       });
     }
-  }, [n]);
+  }, [n, startIndex, STEP]);
 
   // Autoplay infinito
   React.useEffect(() => {
@@ -207,7 +209,7 @@ function SponsorCarousel({ items = SPONSORS, autoPlayInterval = 2500 }: { items?
       setIndex(next);
     }, autoPlayInterval);
     return () => clearInterval(id);
-  }, [index, n, autoPlayInterval]);
+  }, [index, n, autoPlayInterval, STEP]);
 
   const handleMomentumEnd = (e: any) => {
     const i = Math.round(e.nativeEvent.contentOffset.x / STEP);
@@ -336,19 +338,27 @@ function EditionCard({ id, year, color, image, description }: { id: string; year
 export default function HomeScreen() {
   const router = useRouter();
   const { isAuth, user } = useAuth();
-  const params = useLocalSearchParams<{ section?: string }>();
+  const params = useLocalSearchParams<{ section?: string; from?: string }>();
   const scrollRef = useRef<ScrollView>(null);
-  const [pendingScroll, setPendingScroll] = useState(false);
-  const contactPos = useRef<number | null>(null);
+  // const [pendingScroll, setPendingScroll] = useState(false);
+  // const contactPos = useRef<number | null>(null);
   const [scrollY, setScrollY] = useState(0);
   const viewportHeight = Dimensions.get('window').height;
   // Base Y positions for full-screen sections
   const historialBaseY = useRef(0);
   const edicionesBaseY = useRef(0);
   const caracteristicasBaseY = useRef(0);
+  const eventosBaseY = useRef(0);
   const herramientasBaseY = useRef(0);
-  const testimoniosBaseY = useRef(0);
+  // const testimoniosBaseY = useRef(0);
   const sponsorsBaseY = useRef(0);
+  // const noticiasBaseY = useRef(0);
+  const [news, setNews] = useState<{ _id: string; title?: string; content?: string; imageUrl?: string; createdAt?: string; published?: boolean }[]>([]);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [events, setEvents] = useState<Array<{ _id: string; titulo: string; descripcion?: string; fecha?: string; lugar?: string; afiche?: string }>>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [nextEvent, setNextEvent] = useState<{ _id: string; titulo: string; descripcion?: string; fecha?: string; lugar?: string; afiche?: string } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   
   const editions = PAST_EDITIONS.map(e => ({
     id: e.id,
@@ -358,37 +368,98 @@ export default function HomeScreen() {
     description: e.description,
   }));
 
-  const eventDate = new Date('2026-08-30T05:30:00');
+  const eventDate = nextEvent?.fecha ? new Date(nextEvent.fecha) : new Date();
   
   // If navigated with ?section=contacto, defer scroll until layout ready
   useEffect(() => {
-    if (params?.section === 'contacto') {
-      setPendingScroll(true);
+    // Si es superadmin, redirigir a su panel minimalista, salvo cuando viene desde el footer a ver Noticias
+    if (user?.role === 'superadmin' && params?.from !== 'footer') {
+      router.replace('/admin/AdminProfile');
+      return;
     }
-  }, [params?.section]);
+    // if (params?.section === 'contacto') {
+    //   setPendingScroll(true);
+    // }
+  }, [params?.section, params?.from, user?.role, router]);
 
+  // Cargar últimas noticias (públicas)
+  useEffect(() => {
+    (async () => {
+      try {
+        setNewsLoading(true);
+        const data: any[] = await listNews();
+        const items = Array.isArray(data) ? data.filter((n) => n.published !== false) : [];
+        items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setNews(items.slice(0, 3));
+      } catch {
+        setNews([]);
+      } finally {
+        setNewsLoading(false);
+      }
+    })();
+  }, []);
+
+  // Fetch eventos + calcular próximo
+  const fetchEvents = useCallback(async () => {
+    try {
+      setEventsLoading(true);
+      const data: any[] = await listEvents();
+      const items = Array.isArray(data) ? data : [];
+      setEvents(items);
+      const now = Date.now();
+      const upcoming = items
+        .filter((e) => e.fecha)
+        .map((e) => ({ ...e, ts: new Date(e.fecha as string).getTime() }))
+        .filter((e) => !isNaN(e.ts))
+        .sort((a, b) => a.ts - b.ts)
+        .find((e) => e.ts >= now) || null;
+      setNextEvent(upcoming);
+    } catch {
+      setEvents([]);
+      setNextEvent(null);
+    } finally {
+      setEventsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  // Refresh al enfocar Home (ej: al volver desde Admin)
+  useFocusEffect(
+    useCallback(() => {
+      fetchEvents();
+    }, [fetchEvents])
+  );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchEvents();
+    setRefreshing(false);
+  }, [fetchEvents]);
+  
+  // UI
   return (
     <AppShell>
-      {/* Main Content */}
-  <ScrollView className="flex-1" ref={scrollRef} onScroll={(e) => setScrollY(e.nativeEvent.contentOffset.y)} scrollEventThrottle={16}>
-        {/* Presentación + Cuenta regresiva en un mismo degradé */}
-        <LinearGradient 
-          colors={['#000000', '#0a0a0a']} 
-          className="px-4"
-          style={{ paddingTop: 24, paddingBottom: 24 }}
+      <ScrollView
+        ref={scrollRef}
+        onScroll={(e) => setScrollY(e.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {/* Hero */}
+        <LinearGradient
+          colors={["#000000", "#1a1a1a"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          className="px-4 py-10"
         >
-          {/* Adidas-like stripes decoration */}
-          <Stripes thickness={4} />
-          {/* Presentación */}
-          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} direction="left">
-            <SectionTitle className="text-white text-3xl">SOMOS GESPORT</SectionTitle>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} direction="up">
+            <Text className="text-white text-4xl font-extrabold text-center mb-3">GeSPORT</Text>
           </RevealOnScroll>
-          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} direction="right">
-            <View className="items-center mb-4">
-              <View className="w-10 h-10 rounded-full" style={{ backgroundColor: ACCENT }} />
-            </View>
-          </RevealOnScroll>
-          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={100} direction="left">
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} direction="up">
             <Text className="text-white text-lg leading-7 text-center font-medium mb-6">
               Somos GeSPORT, una comunidad que impulsa el running con eventos seguros, vibrantes y
               bien organizados. Conectamos deportistas de todos los niveles para vivir la
@@ -403,12 +474,15 @@ export default function HomeScreen() {
             </View>
           </RevealOnScroll>
           <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={180} direction="up">
-            <View className="flex-row justify-center gap-3 mb-8">
+            <View className="flex-row justify-center gap-3 mb-6">
               <Link href="/masinformacion/Index" asChild>
                 <Button title="Conócenos" variant="secondary" />
               </Link>
               <Link href="/events/TodosEvents" asChild>
                 <Button title="Ver eventos" variant="primary" />
+              </Link>
+              <Link href="/noticias/Index" asChild>
+                <Button title="Noticias" variant="secondary" />
               </Link>
             </View>
           </RevealOnScroll>
@@ -418,26 +492,30 @@ export default function HomeScreen() {
             <Text className="text-white text-3xl font-bold mb-2">PRÓXIMO EVENTO</Text>
           </RevealOnScroll>
           <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} direction="right">
-            <Text className="text-white text-3xl font-bold mb-5">Maratón GeSPORT 2026</Text>
+            <Text className="text-white text-3xl font-bold mb-5">{nextEvent?.titulo || 'Próximo evento'}</Text>
           </RevealOnScroll>
           
           <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={100} direction="up">
-            <View className="bg-white/10 backdrop-blur-sm rounded-xl p-7 mb-10">
+            <View className="bg-white/10 backdrop-blur-sm rounded-lg p-6 mb-10">
               <CountdownTimer targetDate={eventDate} />
               
               <View className="flex-row items-center mb-2">
                 <Calendar color="white" size={16} />
-                <Text className="text-white ml-2">30 Agosto 2026</Text>
+                <Text className="text-white ml-2">
+                  {nextEvent?.fecha ? new Date(nextEvent.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : 'Por anunciar'}
+                </Text>
               </View>
-              
+
               <View className="flex-row items-center mb-2">
                 <Clock color="white" size={16} />
-                <Text className="text-white ml-2">05:30 AM</Text>
+                <Text className="text-white ml-2">
+                  {nextEvent?.fecha ? new Date(nextEvent.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                </Text>
               </View>
 
               <View className="flex-row items-center">
                 <MapPin color="white" size={16} />
-                <Text className="text-white ml-2">Estadio Olímpico</Text>
+                <Text className="text-white ml-2">{nextEvent?.lugar || 'Lugar a confirmar'}</Text>
               </View>
             </View>
           </RevealOnScroll>
@@ -448,8 +526,11 @@ export default function HomeScreen() {
                 title="INSCRIBIRSE"
                 variant="primary"
                 onPress={() => {
-                  if (!isAuth) router.push('/auth/LoginScreen');
-                  else router.push('/events/TodosEvents');
+                  if (nextEvent?._id) {
+                    router.push({ pathname: '/events/[id]', params: { id: String(nextEvent._id) } });
+                  } else {
+                    router.push('/events/TodosEvents');
+                  }
                 }}
               />
               <Link href="/calendario/Calendar" asChild>
@@ -458,6 +539,54 @@ export default function HomeScreen() {
             </View>
           </RevealOnScroll>
         </LinearGradient>
+
+        {/* Eventos (cartas) - arriba de Características */}
+        <View className="py-10 px-4 bg-white"
+          onLayout={(e) => { eventosBaseY.current = e.nativeEvent.layout.y; }}
+        >
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={eventosBaseY.current} direction="left">
+            <SectionTitle className="text-3xl">EVENTOS</SectionTitle>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} baseY={eventosBaseY.current} direction="right">
+            <Text className="text-black text-xl leading-7 mt-3 font-medium">Inscribite y viví la experiencia GeSPORT.</Text>
+          </RevealOnScroll>
+          <View className="mt-6">
+            {eventsLoading ? (
+              <Text className="text-gray-500">Cargando eventos…</Text>
+            ) : events.length === 0 ? (
+              <Text className="text-gray-700">No hay eventos activos por el momento.</Text>
+            ) : (
+              events.slice(0, 3).map((ev, idx) => (
+                <RevealOnScroll key={ev._id} scrollY={scrollY} viewportHeight={viewportHeight} delay={idx * 80} baseY={eventosBaseY.current} direction={idx % 2 === 0 ? 'left' : 'right'}>
+                  <Link href={{ pathname: '/events/[id]', params: { id: ev._id } }} asChild>
+                    <TouchableOpacity className="bg-black rounded-lg p-4 mb-4 relative overflow-hidden" activeOpacity={0.9}>
+                      <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
+                      <Text className="text-white text-2xl font-extrabold" numberOfLines={1}>{ev.titulo}</Text>
+                      <View className="flex-row items-center mt-2">
+                        <Calendar color="white" size={16} />
+                        <Text className="text-white/90 ml-2">
+                          {ev.fecha ? new Date(ev.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : 'Fecha a confirmar'}
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center mt-1">
+                        <Clock color="white" size={16} />
+                        <Text className="text-white/90 ml-2">
+                          {ev.fecha ? new Date(ev.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                        </Text>
+                      </View>
+                      {ev.lugar ? (
+                        <View className="flex-row items-center mt-1">
+                          <MapPin color="white" size={16} />
+                          <Text className="text-white/90 ml-2" numberOfLines={1}>{ev.lugar}</Text>
+                        </View>
+                      ) : null}
+                    </TouchableOpacity>
+                  </Link>
+                </RevealOnScroll>
+              ))
+            )}
+          </View>
+        </View>
 
         {/* Características (Adidas-like) */}
         <View className="py-16 px-4 bg-white"
@@ -540,24 +669,40 @@ export default function HomeScreen() {
           
           <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={historialBaseY.current}>
             <View className="bg-white rounded-xl p-5 shadow-md">
-            <View className="flex-row items-center mb-2">
-              <Activity color="#000000" size={20} />
-              <Text className="text-coffee text-2xl font-extrabold ml-2">MEGA CARRERA</Text>
-            </View>
-            <LinearGradient
-              colors={["#000000", "#222222"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={{ height: 3, borderRadius: 9999, width: 160, marginBottom: 10 }}
-            />
-            <Text className="text-coffee text-xl leading-8 font-medium mb-4">
-              Únete a la experiencia más grande de running en la ciudad. 
-              Miles de atletas compitiendo por la gloria y la superación personal.
-            </Text>
-            <TouchableOpacity className="flex-row items-center">
-              <Text className="text-black font-bold text-lg">Más información</Text>
-              <ChevronDown color="#000000" size={16} className="rotate-[-90deg]" />
-            </TouchableOpacity>
+              <View className="flex-row items-center mb-2">
+                <Newspaper color="#000000" size={20} />
+                <Text className="text-coffee text-2xl font-extrabold ml-2">ANUNCIOS</Text>
+              </View>
+              <LinearGradient
+                colors={["#000000", "#222222"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{ height: 3, borderRadius: 9999, width: 160, marginBottom: 10 }}
+              />
+              {newsLoading ? (
+                <Text className="text-gray-500">Cargando anuncios…</Text>
+              ) : news.length === 0 ? (
+                <Text className="text-gray-700">No hay anuncios por el momento.</Text>
+              ) : (
+                <View className="mt-2">
+                  {news.map((n) => (
+                    <Link href="/noticias/Index" asChild key={n._id}>
+                      <TouchableOpacity className="bg-black rounded-2xl p-4 mb-3 relative overflow-hidden">
+                        <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
+                        <Text className="text-white font-semibold text-lg" numberOfLines={1}>
+                          {n.title || 'Anuncio'}
+                        </Text>
+                        {n.content ? (
+                          <Text className="text-white/80 mt-1" numberOfLines={2}>{n.content}</Text>
+                        ) : null}
+                        {n.createdAt ? (
+                          <Text className="text-white/50 text-xs mt-2">{new Date(n.createdAt).toLocaleDateString()}</Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    </Link>
+                  ))}
+                </View>
+              )}
             </View>
           </RevealOnScroll>
         </View>
@@ -605,6 +750,8 @@ export default function HomeScreen() {
         </View>
 
         {/* Testimonials removed per request */}
+
+        
 
         {/* Past Editions */}
         <View className="py-16 px-4"

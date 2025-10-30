@@ -19,7 +19,7 @@ export default function ActivityScreen() {
   const [elapsed, setElapsed] = useState(0);
   const startRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
-  const [path, setPath] = useState<Array<{ latitude: number; longitude: number }>>([]);
+  const [path, setPath] = useState<{ latitude: number; longitude: number }[]>([]);
   const [distanceM, setDistanceM] = useState(0);
   const locWatchRef = useRef<Location.LocationSubscription | null>(null);
   const [region, setRegion] = useState<Region>({
@@ -150,7 +150,7 @@ export default function ActivityScreen() {
     date: string; // ISO
     elapsedMs: number;
     distanceM: number;
-    path: Array<{ latitude: number; longitude: number }>;
+    path: { latitude: number; longitude: number }[];
   };
 
   const saveRun = async () => {
@@ -178,7 +178,7 @@ export default function ActivityScreen() {
       await AsyncStorage.setItem(key, JSON.stringify(arr));
       Alert.alert('Actividad guardada', 'La encontrarás en tu Perfil.');
       reset();
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'No se pudo guardar la actividad.');
     } finally {
       setSaving(false);

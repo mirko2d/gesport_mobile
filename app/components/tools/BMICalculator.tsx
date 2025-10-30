@@ -58,7 +58,7 @@ export default function BMICalculator() {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [headerAnim]);
 
   // Prefill from local storage or profile if available
   useEffect(() => {
@@ -85,7 +85,7 @@ export default function BMICalculator() {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [bmi, idealMin, idealMax, category, weightKg, heightCm]);
+  }, [bmi, idealMin, idealMax, category, weightKg, heightCm, resultAnim]);
 
   const headerStyle = {
     opacity: headerAnim,

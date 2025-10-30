@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, TouchableOpacity, TouchableOpacityProps, ViewStyle } from 'react-native';
+import { Text, TouchableOpacity, TouchableOpacityProps } from 'react-native';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'chip';
 

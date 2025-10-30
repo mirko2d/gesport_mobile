@@ -1,35 +1,33 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Link, useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { listEditions } from '../../lib/api';
 import { PAST_EDITIONS, mapApiEditionToItem, type EditionItem } from '../../lib/editions';
 import AppShell from '../components/AppShell';
 
 cssInterop(LinearGradient, { className: 'style' });
 
-const screenWidth = Dimensions.get('window').width;
+// removed unused screenWidth
 
 export default function EdicionesAnterioresScreen() {
-  const router = useRouter();
   const [items, setItems] = useState<EditionItem[]>(PAST_EDITIONS);
-  const [loading, setLoading] = useState<boolean>(false);
+  // const [loading, setLoading] = useState<boolean>(false);
 
   useEffect(() => {
     (async () => {
       try {
-        setLoading(true);
         const data = await listEditions();
         if (Array.isArray(data) && data.length) {
           const mapped = data.map(mapApiEditionToItem);
           setItems(mapped);
         }
-      } catch (e) {
+      } catch {
         // Fallback a PAST_EDITIONS si falla
         setItems(PAST_EDITIONS);
       } finally {
-        setLoading(false);
+        // no-op
       }
     })();
   }, []);
