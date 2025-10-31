@@ -1,5 +1,5 @@
 import { usePathname, useRouter } from 'expo-router';
-import { Newspaper, User, Wrench, Zap } from 'lucide-react-native';
+import { MessageCircle, Newspaper, User, Zap } from 'lucide-react-native';
 import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../../context/AuthContext';
@@ -45,15 +45,20 @@ export default function AppFooter() {
   const isNoticias = pathname === '/' || pathname === '/index';
   const isActividad = pathname?.startsWith('/actividad');
   const isHerramientas = pathname?.startsWith('/herramientas');
+  const isChat = pathname?.startsWith('/chat');
+  const chatMode = !!isChat;
+  const activeColor = chatMode ? '#FFFFFF' : '#111';
+  const inactiveColor = '#9CA3AF';
   const isPerfil = pathname?.startsWith('/profile');
+  const isEventos = pathname?.startsWith('/events');
 
   return (
     <View
       style={{
         flexDirection: 'row',
-        backgroundColor: '#fff',
-        borderTopWidth: 1,
-        borderTopColor: '#E5E7EB',
+        backgroundColor: chatMode ? '#000' : '#fff',
+        borderTopWidth: chatMode ? 0 : 1,
+        borderTopColor: chatMode ? '#000' : '#E5E7EB',
         paddingHorizontal: 8,
       }}
     >
@@ -63,13 +68,19 @@ export default function AppFooter() {
             label="Noticias"
             active={!!isNoticias}
             onPress={() => router.replace('/?from=footer')}
-            icon={<Newspaper color={isNoticias ? '#111' : '#9CA3AF'} size={22} />}
+            icon={<Newspaper color={isNoticias ? activeColor : inactiveColor} size={22} />}
+          />
+          <Tab
+            label="Eventos"
+            active={!!isEventos}
+            onPress={() => router.replace('/events/TodosEvents')}
+            icon={<Zap color={isEventos ? activeColor : inactiveColor} size={22} />}
           />
           <Tab
             label="Perfil"
             active={!!isPerfil || pathname?.startsWith('/admin/AdminProfile')}
             onPress={() => router.replace('/admin/AdminProfile')}
-            icon={<User color={(isPerfil || pathname?.startsWith('/admin/AdminProfile')) ? '#111' : '#9CA3AF'} size={22} />}
+            icon={<User color={(isPerfil || pathname?.startsWith('/admin/AdminProfile')) ? activeColor : inactiveColor} size={22} />}
           />
         </>
       ) : (
@@ -78,25 +89,31 @@ export default function AppFooter() {
             label="Noticias"
             active={!!isNoticias}
             onPress={() => router.replace('/')}
-            icon={<Newspaper color={isNoticias ? '#111' : '#9CA3AF'} size={22} />}
+            icon={<Newspaper color={isNoticias ? activeColor : inactiveColor} size={22} />}
           />
           <Tab
             label="Actividad"
             active={!!isActividad}
             onPress={() => router.replace('/actividad/Index')}
-            icon={<Zap color={isActividad ? '#111' : '#9CA3AF'} size={22} />}
+            icon={<Zap color={isActividad ? activeColor : inactiveColor} size={22} />}
           />
           <Tab
-            label="Herramientas"
+            label="Chat"
+            active={!!isChat}
+            onPress={() => router.replace('/chat/Index')}
+            icon={<MessageCircle color={isChat ? activeColor : inactiveColor} size={22} />}
+          />
+          <Tab
+            label="Recursos"
             active={!!isHerramientas}
             onPress={() => router.replace('/herramientas/Index')}
-            icon={<Wrench color={isHerramientas ? '#111' : '#9CA3AF'} size={22} />}
+            icon={<Text style={{ fontSize: 20, color: isHerramientas ? activeColor : inactiveColor }}>🏃</Text>}
           />
           <Tab
             label="Perfil"
             active={!!isPerfil}
             onPress={() => router.replace('/profile/profile')}
-            icon={<User color={isPerfil ? '#111' : '#9CA3AF'} size={22} />}
+            icon={<User color={isPerfil ? activeColor : inactiveColor} size={22} />}
           />
         </>
       )}

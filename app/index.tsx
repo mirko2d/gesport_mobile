@@ -2,12 +2,12 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import {
-    Activity,
-    Calendar,
-    ChevronDown,
-    Clock,
-    MapPin,
-    Newspaper
+  Activity,
+  Calendar,
+  ChevronDown,
+  Clock,
+  MapPin,
+  Newspaper
 } from 'lucide-react-native';
 import { cssInterop } from 'nativewind';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -660,7 +660,7 @@ export default function HomeScreen() {
               <View className="bg-black rounded-2xl p-5 mb-4 relative overflow-hidden">
                 <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
                 <View className="items-center">
-                  <Text className="text-white text-3xl font-extrabold">5K , 10K , 15K</Text>
+                  <Text className="text-white text-3xl font-extrabold">5K , 10K , 21KK</Text>
                   <Text className="text-white/80 text-lg font-medium">Distancias</Text>
                 </View>
               </View>
@@ -712,7 +712,7 @@ export default function HomeScreen() {
           onLayout={(e) => { herramientasBaseY.current = e.nativeEvent.layout.y; }}
         >
           <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={herramientasBaseY.current} direction="left">
-            <SectionTitle className="text-3xl">HERRAMIENTAS PARA CORREDORES</SectionTitle>
+            <SectionTitle className="text-3xl">RECURSOS PARA CORREDORES</SectionTitle>
           </RevealOnScroll>
           <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} baseY={herramientasBaseY.current} direction="right">
             <Text className="text-black text-xl leading-7 mt-3 font-medium">

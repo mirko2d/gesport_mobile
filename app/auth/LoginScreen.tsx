@@ -2,7 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Eye, EyeOff, Image as ImageIcon, Lock, Mail, MapPin, Phone, User } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { api, baseURL, uploadAvatar } from '../../lib/api';
 import Button from '../components/ui/Button';
@@ -50,9 +50,23 @@ export default function LoginScreen() {
   };
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const normalizeEmail = (email: string) => {
+    const raw = (email || '').trim().toLowerCase();
+    const parts = raw.split('@');
+    if (parts.length !== 2) return raw;
+    let [local, domain] = parts;
+    if (domain === 'googlemail.com') domain = 'gmail.com';
+    if (domain === 'gmail.com') {
+      const base = local.split('+')[0];
+      local = base.replace(/\./g, '');
+    }
+    return `${local}@${domain}`;
+  };
+
+  const isStrongPassword = (pw: string) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(pw);
 
   const handleLogin = async () => {
-    const emailNorm = formData.email.trim().toLowerCase();
+  const emailNorm = normalizeEmail(formData.email);
     if (!emailNorm || !formData.password) return Alert.alert('Error', 'Por favor complete todos los campos');
     if (!emailRegex.test(emailNorm)) return Alert.alert('Error', 'Por favor ingrese un correo válido');
 
@@ -72,12 +86,15 @@ export default function LoginScreen() {
   const handleRegister = async () => {
     const { email, password, confirmPassword, fullName, phone, address, avatarUrl } = formData;
 
-    const emailNorm = email.trim().toLowerCase();
+    const emailNorm = normalizeEmail(email);
     if (!emailNorm || !password || !confirmPassword || !fullName || !phone || !address) {
       return Alert.alert('Error', 'Por favor complete todos los campos');
     }
     if (password !== confirmPassword) return Alert.alert('Error', 'Las contraseñas no coinciden');
     if (!emailRegex.test(emailNorm)) return Alert.alert('Error', 'Por favor ingrese un correo válido');
+    if (!isStrongPassword(password)) {
+      return Alert.alert('Contraseña insegura', 'Debe tener al menos 8 caracteres e incluir mayúscula, minúscula, número y símbolo.');
+    }
 
     const parts = fullName.trim().split(/\s+/);
     const nombre = parts.shift() ?? '';
@@ -110,8 +127,7 @@ export default function LoginScreen() {
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
-        // SDK54+ expects an array of JSMediaTypes
-        mediaTypes: ['images'] as any,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -158,7 +174,12 @@ export default function LoginScreen() {
   }
 
   return (
-  <ScrollView className="flex-1 bg-white" keyboardShouldPersistTaps="handled">
+  <KeyboardAvoidingView
+    behavior={Platform.select({ ios: 'padding', android: undefined })}
+    style={{ flex: 1 }}
+    keyboardVerticalOffset={64}
+  >
+    <ScrollView className="flex-1 bg-white" keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
       <View className="flex-1">
   <View className="h-64 relative">
           <Image
@@ -314,5 +335,6 @@ export default function LoginScreen() {
         </View>
       </View>
     </ScrollView>
+  </KeyboardAvoidingView>
   );
 }

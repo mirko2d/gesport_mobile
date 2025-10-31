@@ -6,6 +6,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native
 import AppShell from '../components/AppShell';
 
 function formatTime(ms: number) {
+  // Mostrar horas:minutos:segundos (HH:MM:SS)
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -18,10 +19,11 @@ export default function ActivityScreen() {
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const startRef = useRef<number | null>(null);
-  const rafRef = useRef<number | null>(null);
+  const timerRef = useRef<number | null>(null);
   const [path, setPath] = useState<{ latitude: number; longitude: number }[]>([]);
   const [distanceM, setDistanceM] = useState(0);
   const locWatchRef = useRef<Location.LocationSubscription | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<'unknown' | 'ok' | 'denied' | 'error'>('unknown');
   const [region, setRegion] = useState<Region>({
     latitude: -26.1849,
     longitude: -58.1731,
@@ -31,10 +33,9 @@ export default function ActivityScreen() {
   const [saving, setSaving] = useState(false);
 
   const tick = () => {
-    if (running && startRef.current != null) {
+    if (startRef.current != null) {
       const now = Date.now();
       setElapsed(now - startRef.current);
-      rafRef.current = requestAnimationFrame(tick);
     }
   };
 
@@ -56,14 +57,17 @@ export default function ActivityScreen() {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permisos necesarios', 'Activa los permisos de ubicación para registrar tu ruta.');
+      setGpsStatus('denied');
       return false;
     }
     const last = await Location.getLastKnownPositionAsync().catch(() => null);
     if (last) {
       setRegion((r) => ({ ...r, latitude: last.coords.latitude, longitude: last.coords.longitude }));
+      setGpsStatus('ok');
     } else {
       const current = await Location.getCurrentPositionAsync({});
       setRegion((r) => ({ ...r, latitude: current.coords.latitude, longitude: current.coords.longitude }));
+      setGpsStatus('ok');
     }
     return true;
   };
@@ -73,40 +77,47 @@ export default function ActivityScreen() {
     if (Platform.OS === 'web') {
       Alert.alert('Usa un dispositivo', 'El seguimiento con GPS funciona en un teléfono (Expo Go) o emulador con ubicación simulada.');
     }
-    const ok = await requestLocation();
-    if (!ok) return;
+    // Iniciar SIEMPRE el cronómetro, aunque no se otorguen permisos de ubicación
     const now = Date.now();
-    startRef.current = now - elapsed; // resume support
+    startRef.current = now - elapsed; // soporte reanudar
     setRunning(true);
-    rafRef.current = requestAnimationFrame(tick);
+  // actualizar cada segundo (no mostramos milisegundos)
+  timerRef.current = setInterval(tick, 1000) as unknown as number;
 
-    // start watching location
-    locWatchRef.current = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.Balanced,
-        timeInterval: 1500,
-        distanceInterval: 5,
-      },
-      (pos) => {
-        const pt = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-        setRegion((r) => ({ ...r, latitude: pt.latitude, longitude: pt.longitude }));
-        setPath((prev) => {
-          const next = prev.length ? [...prev, pt] : [pt];
-          if (prev.length) {
-            const inc = haversine(prev[prev.length - 1], pt);
-            setDistanceM((d) => d + inc);
-          }
-          return next;
-        });
-      }
-    );
+    // Intentar permisos y seguimiento de ubicación, pero no bloquear el cronómetro si falla
+    try {
+      const ok = await requestLocation();
+      if (!ok) return; // sin permisos: seguimos solo con cronómetro
+      locWatchRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 1500,
+          distanceInterval: 5,
+        },
+        (pos) => {
+          const pt = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          setRegion((r) => ({ ...r, latitude: pt.latitude, longitude: pt.longitude }));
+          setPath((prev) => {
+            const next = prev.length ? [...prev, pt] : [pt];
+            if (prev.length) {
+              const inc = haversine(prev[prev.length - 1], pt);
+              setDistanceM((d) => d + inc);
+            }
+            return next;
+          });
+        }
+      );
+    } catch {
+      // Ignorar errores de GPS; el cronómetro ya está corriendo
+      setGpsStatus('error');
+    }
   };
 
   const pause = () => {
     if (running) {
       setRunning(false);
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = null;
       if (locWatchRef.current) {
         locWatchRef.current.remove();
         locWatchRef.current = null;
@@ -116,8 +127,8 @@ export default function ActivityScreen() {
 
   const reset = () => {
     setRunning(false);
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
     startRef.current = null;
     setElapsed(0);
     if (locWatchRef.current) {
@@ -130,7 +141,7 @@ export default function ActivityScreen() {
 
   useEffect(() => {
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
       if (locWatchRef.current) locWatchRef.current.remove();
     };
   }, []);
@@ -154,20 +165,19 @@ export default function ActivityScreen() {
   };
 
   const saveRun = async () => {
-    if (running) {
-      Alert.alert('Pausa primero', 'Pausa el cronómetro antes de guardar.');
-      return;
-    }
-    if (distanceM < 10 || elapsed < 5000) {
-      Alert.alert('Faltan datos', 'Registra al menos 10 m y 5 s antes de guardar.');
-      return;
-    }
     try {
       setSaving(true);
+      // Obtener una foto final del tiempo transcurrido en el momento del guardado
+      const now = Date.now();
+      const finalElapsed = startRef.current != null ? now - startRef.current : elapsed;
+      // Si está corriendo, pausar automáticamente
+      if (running) {
+        pause();
+      }
       const run: LocalRun = {
         id: `${Date.now()}`,
         date: new Date().toISOString(),
-        elapsedMs: elapsed,
+        elapsedMs: finalElapsed,
         distanceM,
         path,
       };
@@ -192,6 +202,17 @@ export default function ActivityScreen() {
         <View className="px-6 py-6 items-center">
           <Text className="text-5xl font-extrabold tracking-wider">{formatTime(elapsed)}</Text>
           <Text className="text-gray-500 mt-2">Cronómetro</Text>
+          {gpsStatus !== 'ok' && (
+            <View className="mt-3 bg-yellow-100 border border-yellow-300 rounded-xl px-3 py-2">
+              <Text className="text-yellow-800 text-sm">
+                {Platform.OS === 'web'
+                  ? 'El GPS no está disponible en web. Se medirá solo el tiempo.'
+                  : gpsStatus === 'denied'
+                  ? 'Permite la ubicación para medir distancia y ruta. Por ahora solo medimos el tiempo.'
+                  : 'Sin señal de GPS. Continuamos contando el tiempo.'}
+              </Text>
+            </View>
+          )}
           <View className="flex-row gap-x-6 mt-3">
             <View className="items-center">
               <Text className="text-2xl font-bold">{km.toFixed(2)}</Text>
@@ -214,8 +235,8 @@ export default function ActivityScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={saveRun}
-              disabled={running || saving || distanceM < 10 || elapsed < 5000}
-              className={`px-5 py-3 rounded-full ${running || saving || distanceM < 10 || elapsed < 5000 ? 'bg-gray-300' : 'bg-green-600'}`}
+              disabled={saving}
+              className={`px-5 py-3 rounded-full ${saving ? 'bg-gray-300' : 'bg-green-600'}`}
             >
               <Text className="text-white font-semibold">Guardar</Text>
             </TouchableOpacity>

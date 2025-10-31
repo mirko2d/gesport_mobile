@@ -16,10 +16,10 @@ export default function ToolsScreen() {
     return null;
   }
   return (
-    <AppShell title="Herramientas" showBack>
+    <AppShell title="Recursos" showBack>
       <ScrollView className="flex-1 bg-white">
         <View className="px-6 py-6">
-          <SectionTitle>HERRAMIENTAS</SectionTitle>
+          <SectionTitle>RECURSOS</SectionTitle>
           <PaceCalculator />
           <BMICalculator />
           <View className="mt-6">

@@ -2,7 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Activity as ActivityIcon, Calendar, LogOut, MapPin, Trophy, User as UserIcon } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import AppShell from '../components/AppShell';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
@@ -24,9 +24,19 @@ type UserDoc = {
 
 type EnrollmentDoc = {
   _id?: string;
-  usuario_id: string;
-  evento_id: string;
-  fecha_inscripcion?: string;
+  // Backend actual usa claves 'user' y 'event' y devuelve timestamps
+  user?: string | { _id: string };
+  event?: {
+    _id: string;
+    titulo?: string;
+    nombre?: string; // compat
+    fecha?: string; // ISO
+    lugar?: string;
+    categoria?: string;
+    afiche?: string;
+  } | string;
+  createdAt?: string; // fecha de inscripción
+  estado?: 'PENDIENTE' | 'CONFIRMADA' | 'CANCELADA';
 };
 
 type ResultDoc = {
@@ -47,6 +57,10 @@ export default function ProfileScreen() {
   const [results, setResults] = useState<ResultDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [localRuns, setLocalRuns] = useState<{ id: string; date: string; elapsedMs: number; distanceM: number }[]>([]);
+  const [goals, setGoals] = useState<{ kmMonthly: number; actMonthly: number }>({ kmMonthly: 20, actMonthly: 8 });
+  const [goalsModalOpen, setGoalsModalOpen] = useState(false);
+  const [goalsInputKm, setGoalsInputKm] = useState('');
+  const [goalsInputAct, setGoalsInputAct] = useState('');
 
   const isSuperadmin = authUser?.role === 'superadmin';
   const isAdmin = authUser?.role === 'admin' || isSuperadmin;
@@ -73,6 +87,17 @@ export default function ProfileScreen() {
         ? arr.map((r: any) => ({ id: r.id, date: r.date, elapsedMs: r.elapsedMs, distanceM: r.distanceM }))
         : [];
       setLocalRuns(mapped);
+      // Load user goals (local)
+      const gr = await AsyncStorage.getItem('@gesport:goals');
+      if (gr) {
+        try {
+          const parsed = JSON.parse(gr);
+          setGoals({
+            kmMonthly: typeof parsed?.kmMonthly === 'number' ? parsed.kmMonthly : 20,
+            actMonthly: typeof parsed?.actMonthly === 'number' ? parsed.actMonthly : 8,
+          });
+        } catch {}
+      }
     } catch (e: any) {
       setError(e?.response?.data?.error || e?.message || 'No se pudo cargar el perfil.');
       setProfile(null);
@@ -119,6 +144,17 @@ export default function ProfileScreen() {
           // Reaplicar avatar local si existe
           const localAvatar = await AsyncStorage.getItem('@gesport:profile:avatarUrl');
             if (localAvatar) setProfile((prev) => (prev ? { ...prev, avatarUrl: localAvatar } : prev));
+          // Reload goals on focus
+          const gr = await AsyncStorage.getItem('@gesport:goals');
+          if (gr) {
+            try {
+              const parsed = JSON.parse(gr);
+              setGoals({
+                kmMonthly: typeof parsed?.kmMonthly === 'number' ? parsed.kmMonthly : 20,
+                actMonthly: typeof parsed?.actMonthly === 'number' ? parsed.actMonthly : 8,
+              });
+            } catch {}
+          }
         } catch {}
       })();
     }, [])
@@ -136,7 +172,7 @@ export default function ProfileScreen() {
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'] as any,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -154,6 +190,7 @@ export default function ProfileScreen() {
   };
 
   return (
+    <>
     <AppShell
       title="Mi Perfil"
       showBack
@@ -237,7 +274,18 @@ export default function ProfileScreen() {
 
           {/* Objetivos */}
           <View className="px-6 mt-4">
-            <Text className="text-black text-xl font-extrabold">OBJETIVOS</Text>
+            <View className="flex-row items-center justify-between">
+              <Text className="text-black text-xl font-extrabold">OBJETIVOS</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setGoalsInputKm(String(goals.kmMonthly));
+                  setGoalsInputAct(String(goals.actMonthly));
+                  setGoalsModalOpen(true);
+                }}
+              >
+                <Text className="text-primary font-semibold">Editar</Text>
+              </TouchableOpacity>
+            </View>
             {(() => {
               // Objetivos simples locales (mes actual)
               const now = new Date();
@@ -249,8 +297,8 @@ export default function ProfileScreen() {
               });
               const kmThisMonth = runsThisMonth.reduce((acc, r) => acc + (r.distanceM || 0), 0) / 1000;
               const actThisMonth = runsThisMonth.length;
-              const kmGoal = 20;
-              const actGoal = 8;
+              const kmGoal = goals.kmMonthly;
+              const actGoal = goals.actMonthly;
               const pctKm = Math.min(1, kmThisMonth / kmGoal);
               const pctAct = Math.min(1, actThisMonth / actGoal);
               const Bar = ({ pct, color = '#111' }: { pct: number; color?: string }) => (
@@ -364,15 +412,26 @@ export default function ProfileScreen() {
             ) : (
               enrollments.map((enr, idx) => (
                 <Card key={idx} className="mt-3 border border-gray-100">
-                  <View className="flex-row items-center">
-                    <MapPin color="#2C1810" size={18} />
-                    <Text className="text-gray-800 ml-2">Evento: {enr.evento_id}</Text>
-                  </View>
-                  {enr.fecha_inscripcion ? (
-                    <Text className="text-gray-600 mt-1">
-                      Fecha inscripción: {new Date(enr.fecha_inscripcion).toLocaleString()}
-                    </Text>
-                  ) : null}
+                  {(() => {
+                    const ev: any = typeof enr.event === 'string' ? { _id: enr.event } : enr.event;
+                    const title = ev?.titulo || ev?.nombre || 'Evento';
+                    const fechaEv = ev?.fecha ? new Date(ev.fecha) : null;
+                    const fechaIns = enr.createdAt ? new Date(enr.createdAt) : null;
+                    return (
+                      <>
+                        <View className="flex-row items-center">
+                          <MapPin color="#2C1810" size={18} />
+                          <Text className="text-gray-800 ml-2">{title}</Text>
+                        </View>
+                        {fechaEv ? (
+                          <Text className="text-gray-700 mt-1">Fecha del evento: {fechaEv.toLocaleString()}</Text>
+                        ) : null}
+                        {fechaIns ? (
+                          <Text className="text-gray-600 mt-1">Inscripto el: {fechaIns.toLocaleString()}</Text>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                 </Card>
               ))
             )}
@@ -428,6 +487,63 @@ export default function ProfileScreen() {
         </ScrollView>
       )}
       </View>
-    </AppShell>
+  </AppShell>
+    {/* Modal para editar objetivos */}
+  <Modal
+      visible={goalsModalOpen}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setGoalsModalOpen(false)}
+    >
+      <View className="flex-1 bg-black/60 items-center justify-center px-6">
+        <View className="bg-white rounded-2xl w-full p-5">
+          <Text className="text-lg font-bold text-gray-900 mb-2">Editar objetivos</Text>
+          <Text className="text-gray-700 mb-1">Kilómetros por mes</Text>
+          <TextInput
+            className="border border-gray-300 rounded-lg px-3 py-2 mb-3"
+            keyboardType="numeric"
+            value={goalsInputKm}
+            onChangeText={setGoalsInputKm}
+            placeholder="Ej: 50"
+          />
+          <Text className="text-gray-700 mb-1">Actividades por mes</Text>
+          <TextInput
+            className="border border-gray-300 rounded-lg px-3 py-2 mb-4"
+            keyboardType="numeric"
+            value={goalsInputAct}
+            onChangeText={setGoalsInputAct}
+            placeholder="Ej: 8"
+          />
+          <View className="flex-row justify-end gap-2">
+            <TouchableOpacity
+              className="px-4 py-2 rounded-lg bg-gray-100"
+              onPress={() => setGoalsModalOpen(false)}
+            >
+              <Text className="text-gray-800">Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="px-4 py-2 rounded-lg bg-primary"
+              onPress={async () => {
+                const km = Math.max(0, Math.round(Number(goalsInputKm || '0')));
+                const act = Math.max(0, Math.round(Number(goalsInputAct || '0')));
+                if (!isFinite(km) || !isFinite(act)) {
+                  Alert.alert('Valores inválidos', 'Ingresá números válidos.');
+                  return;
+                }
+                const next = { kmMonthly: km, actMonthly: act };
+                setGoals(next);
+                try {
+                  await AsyncStorage.setItem('@gesport:goals', JSON.stringify(next));
+                } catch {}
+                setGoalsModalOpen(false);
+              }}
+            >
+              <Text className="text-white font-medium">Guardar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }

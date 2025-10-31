@@ -97,7 +97,7 @@ function ruleBasedCoach(question: string): string {
   ].join('\n• ');
 }
 
-export default function ChatCoach() {
+export default function ChatCoach({ fullScreen = false }: { fullScreen?: boolean }) {
   const [messages, setMessages] = useState<Msg[]>([
     {
       id: 'm0',
@@ -144,9 +144,11 @@ export default function ChatCoach() {
     );
   };
 
+  const containerClass = fullScreen ? 'flex-1 bg-black px-4 py-4 relative overflow-hidden' : 'bg-black rounded-2xl p-4 relative overflow-hidden';
+
   return (
-    <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', android: undefined })}>
-      <View className="bg-black rounded-2xl p-4 relative overflow-hidden">
+    <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', android: undefined })} style={{ flex: fullScreen ? 1 : undefined }}>
+      <View className={containerClass}>
         <Stripes />
         <View className="flex-row items-center mb-3">
           <MessageCircle color="white" size={22} />
@@ -155,7 +157,7 @@ export default function ChatCoach() {
 
         <ScrollView
           ref={listRef}
-          contentContainerStyle={{ paddingVertical: 4 }}
+          contentContainerStyle={{ paddingVertical: 4, flexGrow: 1 }}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
           showsVerticalScrollIndicator={false}
         >

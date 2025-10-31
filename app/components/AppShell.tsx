@@ -2,8 +2,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { usePathname, useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppFooter from './ui/AppFooter';
 
 type Props = {
@@ -15,13 +15,36 @@ type Props = {
 };
 
 const FOOTER_HEIGHT = 72;
-const FOOTER_OFFSET = 12; // raise footer slightly above the OS edge
+const FOOTER_OFFSET = 12; // base lift above OS edge
+const FOOTER_EXTRA_LIFT = 4; // lowered closer to edge per feedback
 
 export default function AppShell({ title, showBack, right, children, hideFooter }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const isHome = !pathname || pathname === '/';
   const derivedShowBack = showBack !== undefined ? showBack : !isHome;
+  const insets = useSafeAreaInsets();
+  const footerBottomOffset = hideFooter
+    ? 0
+    : Math.max(FOOTER_OFFSET + FOOTER_EXTRA_LIFT, (insets?.bottom || 0) + FOOTER_OFFSET + FOOTER_EXTRA_LIFT);
+
+  const safeBack = React.useCallback(() => {
+    try {
+      // @ts-ignore - canGoBack is available in expo-router >= 3
+      if (typeof router.canGoBack === 'function' && router.canGoBack()) {
+        router.back();
+        return;
+      }
+      router.back();
+      // If back didn't navigate (no history), ensure we land somewhere sensible
+      setTimeout(() => {
+        // @ts-ignore accessing private state is not supported; fallback to replace home
+        router.replace('/');
+      }, 50);
+    } catch {
+      router.replace('/');
+    }
+  }, [router]);
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -36,7 +59,7 @@ export default function AppShell({ title, showBack, right, children, hideFooter 
           <View style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
             {derivedShowBack ? (
               <TouchableOpacity
-                onPress={() => router.back()}
+                onPress={safeBack}
                 className="h-10 w-10 rounded-full bg-white/10 items-center justify-center"
               >
                 <ArrowLeft color="white" size={20} />
@@ -53,10 +76,16 @@ export default function AppShell({ title, showBack, right, children, hideFooter 
         </View>
       </View>
 
-      {/* Contenido con padding inferior para footer fijo (ajustado por offset) */}
-      <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : FOOTER_HEIGHT + FOOTER_OFFSET }}>{children}</View>
+      {/* Contenido con padding inferior para footer fijo (ajustado por offset) y evitando cubrir por teclado */}
+      <KeyboardAvoidingView
+        style={{ flex: 1, paddingBottom: hideFooter ? 0 : FOOTER_HEIGHT + footerBottomOffset }}
+        behavior={Platform.select({ ios: 'padding', android: undefined })}
+        keyboardVerticalOffset={0}
+      >
+        {children}
+      </KeyboardAvoidingView>
       {!hideFooter && (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: FOOTER_OFFSET }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: footerBottomOffset }}>
           <AppFooter />
         </View>
       )}
