@@ -2,34 +2,24 @@ const express = require('express');
 const { authRequired, requireRole } = require('../middleware/auth');
 const Event = require('../models/Event');
 const Enrollment = require('../models/Enrollment');
+const { listEvents } = require('../controllers/eventsController');
 
 const router = express.Router();
 
 // Listar eventos (público)
-router.get('/', async (req, res, next) => {
-  try {
-    const events = await Event.find({ activo: true }).sort({ fecha: 1 }).lean();
-    // Adjuntar cantidad de inscriptos y maxParticipantes (alias de cupos)
-    const withCounts = await Promise.all(
-      events.map(async (ev) => {
-        const count = await Enrollment.countDocuments({ event: ev._id });
-        return {
-          ...ev,
-          participantes: count,
-          maxParticipantes: typeof ev.cupos === 'number' ? ev.cupos : null,
-        };
-      })
-    );
-    res.json(withCounts);
-  } catch (e) {
-    next(e);
-  }
-});
+router.get('/', listEvents);
 
 // Crear evento (solo superadmin)
 router.post('/', authRequired, requireRole(['superadmin']), async (req, res, next) => {
   try {
     const payload = { ...(req.body || {}), createdBy: req.user._id };
+    // No permitir crear eventos en fecha pasada
+    if (payload.fecha) {
+      const when = new Date(payload.fecha);
+      if (!isNaN(when.getTime()) && when.getTime() < Date.now()) {
+        return res.status(400).json({ error: 'La fecha del evento ya pasó. Elija una fecha futura.' });
+      }
+    }
     const event = await Event.create(payload);
     res.status(201).json(event);
   } catch (e) {
@@ -71,6 +61,12 @@ router.patch('/:id', authRequired, requireRole(['superadmin']), async (req, res,
   try {
     const { id } = req.params;
     const update = req.body || {};
+    if (update.fecha) {
+      const when = new Date(update.fecha);
+      if (!isNaN(when.getTime()) && when.getTime() < Date.now()) {
+        return res.status(400).json({ error: 'No se puede establecer una fecha pasada.' });
+      }
+    }
     const ev = await Event.findByIdAndUpdate(id, update, { new: true });
     if (!ev) return res.status(404).json({ error: 'Evento no encontrado' });
     res.json(ev);

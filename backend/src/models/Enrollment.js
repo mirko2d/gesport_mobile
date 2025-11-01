@@ -10,6 +10,27 @@ const EnrollmentSchema = new mongoose.Schema(
       referencia: String,
       monto: Number,
     },
+    form: {
+      dni: String,
+      fechaNacimiento: Date,
+      genero: { type: String, enum: ['F', 'M', 'X', 'Otro'], default: 'X' },
+      tallaRemera: { type: String, enum: ['XS', 'S', 'M', 'L', 'XL', 'XXL'] },
+      emergencia: {
+        nombre: String,
+        telefono: String,
+        relacion: String,
+      },
+      salud: {
+        alergias: String,
+        condiciones: String,
+        medicamentos: String,
+      },
+      club: String,
+      ciudad: String,
+      pais: String,
+      aceptoTerminos: { type: Boolean, default: false },
+      aceptoDescargo: { type: Boolean, default: false },
+    },
   },
   { timestamps: true }
 );

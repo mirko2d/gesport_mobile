@@ -2,7 +2,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { usePathname, useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
 import React from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { BackHandler, KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppFooter from './ui/AppFooter';
 
@@ -30,20 +30,37 @@ export default function AppShell({ title, showBack, right, children, hideFooter 
 
   const safeBack = React.useCallback(() => {
     try {
-      // @ts-ignore - canGoBack is available in expo-router >= 3
-      if (typeof router.canGoBack === 'function' && router.canGoBack()) {
+      // Evitar dispatch de GO_BACK si no hay historial (causa el error)
+      // @ts-ignore - canGoBack may exist on newer expo-router versions
+      const canGo = typeof router.canGoBack === 'function' ? router.canGoBack() : false;
+      if (canGo) {
         router.back();
-        return;
-      }
-      router.back();
-      // If back didn't navigate (no history), ensure we land somewhere sensible
-      setTimeout(() => {
-        // @ts-ignore accessing private state is not supported; fallback to replace home
+      } else {
         router.replace('/');
-      }, 50);
+      }
     } catch {
       router.replace('/');
     }
+  }, [router]);
+
+  // Interceptar botón físico de back en Android para evitar 'GO_BACK' no manejado
+  React.useEffect(() => {
+    const onBackPress = () => {
+      try {
+        // @ts-ignore
+        const canGo = typeof router.canGoBack === 'function' ? router.canGoBack() : false;
+        if (canGo) {
+          router.back();
+        } else {
+          router.replace('/');
+        }
+      } catch {
+        router.replace('/');
+      }
+      return true; // consumimos el evento
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
   }, [router]);
 
   return (

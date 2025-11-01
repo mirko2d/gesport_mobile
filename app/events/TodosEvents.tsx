@@ -1,3 +1,4 @@
+import { isPastEvent } from '@features/events';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Calendar, MapPin, Search, Users } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -30,6 +31,7 @@ type UiEvent = {
   id: string;
   title: string;
   date: string;
+  dateISO?: string;
   time: string;
   location: string;
   category: string;
@@ -56,6 +58,7 @@ function mapToUi(ev: ApiEvent): UiEvent {
     id: ev._id,
     title: ev.nombre ?? ev.titulo ?? 'Evento',
     date: dateStr,
+    dateISO: ev.fecha,
     time: timeStr,
     location: ev.ubicacion ?? ev.lugar ?? 'Ubicación a confirmar',
     category: ev.categoria ?? 'General',
@@ -289,6 +292,7 @@ export default function AllEventsScreen() {
           </View>
         ) : filteredEvents.length > 0 ? (
           filteredEvents.map((event) => {
+            const isPast = isPastEvent(event.dateISO);
             const isFull =
               typeof event.maxParticipants === 'number' &&
               typeof event.participantsCount === 'number' &&
@@ -331,10 +335,17 @@ export default function AllEventsScreen() {
                 </View>
 
                 <View className="flex-row justify-between items-center">
-                  <View className="bg-primary px-3 py-1 rounded-full">
-                    <Text className="text-white font-medium text-sm">
-                      {event.category}
-                    </Text>
+                  <View className="flex-row gap-2">
+                    <View className="bg-primary px-3 py-1 rounded-full">
+                      <Text className="text-white font-medium text-sm">
+                        {event.category}
+                      </Text>
+                    </View>
+                    {isPast ? (
+                      <View className="bg-gray-800 px-3 py-1 rounded-full">
+                        <Text className="text-white font-semibold text-sm">Finalizado</Text>
+                      </View>
+                    ) : null}
                   </View>
 
                   <View className="flex-row gap-2">
@@ -342,9 +353,9 @@ export default function AllEventsScreen() {
                       <Button title="Inscriptos" variant="outline" onPress={() => openParticipants(event)} />
                     ) : null}
                     <Button
-                      title={isEnrolled ? 'Inscripto' : isFull ? 'Cupos llenos' : 'Inscribirme'}
+                      title={isPast ? 'Finalizado' : isEnrolled ? 'Inscripto' : isFull ? 'Cupos llenos' : 'Inscribirme'}
                       onPress={() => openEnrollForm(event)}
-                      disabled={isFull || isEnrolled}
+                      disabled={isPast || isFull || isEnrolled}
                     />
                     <Button
                       title="Ver detalles"

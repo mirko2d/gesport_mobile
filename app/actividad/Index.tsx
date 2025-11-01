@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Platform, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import { useAuth } from '../../context/AuthContext';
 import AppShell from '../components/AppShell';
 
 function formatTime(ms: number) {
@@ -16,8 +17,10 @@ function formatTime(ms: number) {
 }
 
 export default function ActivityScreen() {
+  const { user: authUser } = useAuth();
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [mode, setMode] = useState<'running' | 'walk' | 'cycling'>('running');
   const startRef = useRef<number | null>(null);
   const timerRef = useRef<number | null>(null);
   const [path, setPath] = useState<{ latitude: number; longitude: number }[]>([]);
@@ -31,6 +34,27 @@ export default function ActivityScreen() {
     longitudeDelta: 0.08,
   });
   const [saving, setSaving] = useState(false);
+  const [controlsLocked, setControlsLocked] = useState(false);
+
+  // Helpers de claves por usuario
+  const suffix = authUser?._id ? `:${authUser._id}` : ':anon';
+  const keyActivities = `@gesport:activities${suffix}`;
+  const keyMode = `@gesport:activity:type${suffix}`;
+
+  // Cargar y persistir el modo de actividad preferido
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(keyMode);
+        if (saved === 'running' || saved === 'walk' || saved === 'cycling') setMode(saved);
+      } catch {}
+    })();
+  }, [keyMode]);
+
+  const selectMode = async (m: 'running' | 'walk' | 'cycling') => {
+    setMode(m);
+    try { await AsyncStorage.setItem(keyMode, m); } catch {}
+  };
 
   const tick = () => {
     if (startRef.current != null) {
@@ -73,6 +97,7 @@ export default function ActivityScreen() {
   };
 
   const start = async () => {
+    if (controlsLocked) return;
     if (running) return;
     if (Platform.OS === 'web') {
       Alert.alert('Usa un dispositivo', 'El seguimiento con GPS funciona en un teléfono (Expo Go) o emulador con ubicación simulada.');
@@ -126,15 +151,13 @@ export default function ActivityScreen() {
   };
 
   const reset = () => {
-    setRunning(false);
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = null;
+    if (controlsLocked) return;
+    // Asegurar que todo está detenido antes de limpiar estados
+    try {
+      pause();
+    } catch {}
     startRef.current = null;
     setElapsed(0);
-    if (locWatchRef.current) {
-      locWatchRef.current.remove();
-      locWatchRef.current = null;
-    }
     setPath([]);
     setDistanceM(0);
   };
@@ -162,9 +185,14 @@ export default function ActivityScreen() {
     elapsedMs: number;
     distanceM: number;
     path: { latitude: number; longitude: number }[];
+    mode: 'running' | 'walk' | 'cycling';
   };
 
   const saveRun = async () => {
+    if (controlsLocked) {
+      Alert.alert('Bloqueo activado', 'Desbloquea los controles para poder guardar.');
+      return;
+    }
     try {
       setSaving(true);
       // Obtener una foto final del tiempo transcurrido en el momento del guardado
@@ -180,12 +208,12 @@ export default function ActivityScreen() {
         elapsedMs: finalElapsed,
         distanceM,
         path,
+        mode,
       };
-      const key = '@gesport:activities';
-      const raw = await AsyncStorage.getItem(key);
+      const raw = await AsyncStorage.getItem(keyActivities);
       const arr: LocalRun[] = raw ? JSON.parse(raw) : [];
       arr.unshift(run);
-      await AsyncStorage.setItem(key, JSON.stringify(arr));
+      await AsyncStorage.setItem(keyActivities, JSON.stringify(arr));
       Alert.alert('Actividad guardada', 'La encontrarás en tu Perfil.');
       reset();
     } catch {
@@ -197,11 +225,19 @@ export default function ActivityScreen() {
 
   return (
     <AppShell title="Actividad">
-      <View className="flex-1">
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 140 }}>
         {/* Timer */}
         <View className="px-6 py-6 items-center">
           <Text className="text-5xl font-extrabold tracking-wider">{formatTime(elapsed)}</Text>
           <Text className="text-gray-500 mt-2">Cronómetro</Text>
+          <TouchableOpacity
+            onPress={() => setControlsLocked((v) => !v)}
+            className={`mt-3 px-4 py-2 rounded-full border ${controlsLocked ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200'}`}
+          >
+            <Text className={`${controlsLocked ? 'text-red-700' : 'text-gray-800'}`}>
+              {controlsLocked ? '🔒 Bloqueo activado' : '🔓 Bloquear controles'}
+            </Text>
+          </TouchableOpacity>
           {gpsStatus !== 'ok' && (
             <View className="mt-3 bg-yellow-100 border border-yellow-300 rounded-xl px-3 py-2">
               <Text className="text-yellow-800 text-sm">
@@ -224,19 +260,30 @@ export default function ActivityScreen() {
             </View>
           </View>
           <View className="flex-row gap-x-3 mt-5">
-            <TouchableOpacity onPress={start} className="bg-black px-5 py-3 rounded-full">
+            <TouchableOpacity onPress={start} disabled={controlsLocked} className={`px-5 py-3 rounded-full ${controlsLocked ? 'bg-gray-300' : 'bg-black'}`}>
               <Text className="text-white font-semibold">Iniciar</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={pause} className="bg-gray-800 px-5 py-3 rounded-full">
-              <Text className="text-white font-semibold">Pausar</Text>
+            <TouchableOpacity
+              onPress={() => {
+                if (running) return pause();
+                // trying to resume
+                if (controlsLocked) {
+                  Alert.alert('Bloqueo activado', 'Desbloquea los controles para reanudar.');
+                  return;
+                }
+                start();
+              }}
+              className="bg-gray-800 px-5 py-3 rounded-full"
+            >
+              <Text className="text-white font-semibold">{running ? 'Pausar' : 'Reanudar'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={reset} className="bg-gray-200 px-5 py-3 rounded-full">
+            <TouchableOpacity onPress={reset} disabled={controlsLocked} className={`px-5 py-3 rounded-full ${controlsLocked ? 'bg-gray-300' : 'bg-gray-200'}`}>
               <Text className="text-gray-800 font-semibold">Reiniciar</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={saveRun}
-              disabled={saving}
-              className={`px-5 py-3 rounded-full ${saving ? 'bg-gray-300' : 'bg-green-600'}`}
+              disabled={saving || controlsLocked}
+              className={`px-5 py-3 rounded-full ${saving || controlsLocked ? 'bg-gray-300' : 'bg-green-600'}`}
             >
               <Text className="text-white font-semibold">Guardar</Text>
             </TouchableOpacity>
@@ -251,8 +298,8 @@ export default function ActivityScreen() {
               style={{ flex: 1 }}
               initialRegion={region}
               region={region}
-              showsUserLocation
-              followsUserLocation
+              showsUserLocation={gpsStatus === 'ok'}
+              followsUserLocation={gpsStatus === 'ok'}
               showsMyLocationButton={false}
             >
               {path.length > 1 && (
@@ -270,15 +317,30 @@ export default function ActivityScreen() {
         </View>
 
         {/* Quick modes */}
-        <View className="px-6 mt-6 mb-10">
+        <View className="px-6 mt-6">
           <View className="flex-row justify-between">
-            <View className="bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100"><Text>🏃 Running</Text></View>
-            <View className="bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100"><Text>🚶 Caminata</Text></View>
-            <View className="bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100"><Text>🚴 Ciclismo</Text></View>
+            <TouchableOpacity
+              onPress={() => selectMode('running')}
+              className={`rounded-xl px-4 py-3 shadow-sm border ${mode === 'running' ? 'bg-black border-black' : 'bg-white border-gray-100'}`}
+            >
+              <Text className={`${mode === 'running' ? 'text-white' : 'text-gray-900'}`}>🏃 Running</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => selectMode('walk')}
+              className={`rounded-xl px-4 py-3 shadow-sm border ${mode === 'walk' ? 'bg-black border-black' : 'bg-white border-gray-100'}`}
+            >
+              <Text className={`${mode === 'walk' ? 'text-white' : 'text-gray-900'}`}>🚶 Caminata</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => selectMode('cycling')}
+              className={`rounded-xl px-4 py-3 shadow-sm border ${mode === 'cycling' ? 'bg-black border-black' : 'bg-white border-gray-100'}`}
+            >
+              <Text className={`${mode === 'cycling' ? 'text-white' : 'text-gray-900'}`}>🚴 Ciclismo</Text>
+            </TouchableOpacity>
             <View className="bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100"><Text>…</Text></View>
           </View>
         </View>
-      </View>
+      </ScrollView>
     </AppShell>
   );
 }

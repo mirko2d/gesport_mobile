@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Calendar, MapPin, Users } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { enroll, getEvent, myEnrollments } from '../../lib/api';
 import AppShell from '../components/AppShell';
@@ -18,12 +18,28 @@ export default function EventDetailScreen() {
   const [event, setEvent] = useState<any>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [enrolledEventIds, setEnrolledEventIds] = useState<Set<string>>(new Set());
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<any>({
+    dni: '',
+    fechaNacimiento: '', // YYYY-MM-DD
+    genero: 'X', // 'F' | 'M' | 'X' | 'Otro'
+    tallaRemera: 'M',
+    emergencia: { nombre: '', telefono: '', relacion: '' },
+    salud: { alergias: '' },
+    aceptoTerminos: false,
+    aceptoDescargo: false,
+  });
 
   const isEnrolled = useMemo(() => (id ? enrolledEventIds.has(String(id)) : false), [enrolledEventIds, id]);
   const isFull = useMemo(() => {
     if (!event) return false;
     return typeof event.maxParticipantes === 'number' && typeof event.participantes === 'number' && event.maxParticipantes > 0 && event.participantes >= event.maxParticipantes;
   }, [event]);
+  const isPast = useMemo(() => {
+    if (!event?.fecha) return false;
+    const when = new Date(event.fecha as string).getTime();
+    return !isNaN(when) && when < Date.now();
+  }, [event?.fecha]);
 
   const loadEvent = async () => {
     try {
@@ -71,12 +87,22 @@ export default function EventDetailScreen() {
       return;
     }
     if (!id) return;
+    // En vez de inscribir directo, mostramos el formulario
+    setShowForm(true);
+  };
+
+  const submitEnrollment = async () => {
+    // Validaciones mínimas en cliente
+    if (!form.aceptoTerminos || !form.aceptoDescargo) {
+      Alert.alert('Falta confirmación', 'Debes aceptar Términos y el Descargo para continuar.');
+      return;
+    }
     try {
       setEnrolling(true);
-      await enroll(String(id));
+      await enroll(String(id), form);
+      setShowForm(false);
       Alert.alert('Inscripción completada', 'Quedaste inscripto en el evento.');
       setEnrolledEventIds((prev) => new Set<string>([...prev, String(id)]));
-      // Opcional actualizar contador local
       setEvent((prev: any) => (prev ? { ...prev, participantes: (prev.participantes ?? 0) + 1 } : prev));
     } catch (err: any) {
       if (err?.response?.status === 409 && err?.response?.data?.error === 'Cupo completo') {
@@ -141,15 +167,85 @@ export default function EventDetailScreen() {
 
             <View className="flex-row justify-end">
               <Button
-                title={isEnrolled ? 'Inscripto' : isFull ? 'Cupos llenos' : 'Inscribirme'}
+                title={isPast ? 'Finalizado' : isEnrolled ? 'Inscripto' : isFull ? 'Cupos llenos' : 'Inscribirme'}
                 onPress={handleEnroll}
-                disabled={isEnrolled || isFull}
+                disabled={isPast || isEnrolled || isFull}
                 loading={enrolling}
               />
             </View>
           </View>
         </ScrollView>
       )}
+
+      {/* Modal Formulario de Inscripción */}
+      <Modal visible={showForm} animationType="slide" onRequestClose={() => setShowForm(false)}>
+        <AppShell showBack title="Completar inscripción">
+          <ScrollView className="flex-1 p-4">
+            <Text className="text-lg font-bold mb-2">Datos personales</Text>
+            <Text className="text-gray-700 mb-1">DNI</Text>
+            <TextInput
+              value={form.dni}
+              onChangeText={(t) => setForm((f: any) => ({ ...f, dni: t }))}
+              placeholder="Documento"
+              keyboardType="number-pad"
+              className="border border-gray-300 rounded-lg px-3 py-2 mb-3"
+            />
+            <Text className="text-gray-700 mb-1">Fecha de nacimiento (YYYY-MM-DD)</Text>
+            <TextInput
+              value={form.fechaNacimiento}
+              onChangeText={(t) => setForm((f: any) => ({ ...f, fechaNacimiento: t }))}
+              placeholder="1990-05-21"
+              className="border border-gray-300 rounded-lg px-3 py-2 mb-3"
+            />
+
+            <Text className="text-gray-700 mb-1">Género</Text>
+            <View className="flex-row gap-2 mb-3">
+              {(['F','M','X','Otro'] as const).map((g) => (
+                <TouchableOpacity key={g} onPress={() => setForm((f: any) => ({ ...f, genero: g }))} className={`px-3 py-2 rounded-full border ${form.genero === g ? 'bg-black border-black' : 'bg-white border-gray-300'}`}>
+                  <Text className={`${form.genero === g ? 'text-white' : 'text-gray-800'}`}>{g}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text className="text-lg font-bold mb-2">Talle de remera</Text>
+            <View className="flex-row flex-wrap gap-2 mb-3">
+              {(['XS','S','M','L','XL','XXL'] as const).map((t) => (
+                <TouchableOpacity key={t} onPress={() => setForm((f: any) => ({ ...f, tallaRemera: t }))} className={`px-3 py-2 rounded-full border ${form.tallaRemera === t ? 'bg-black border-black' : 'bg-white border-gray-300'}`}>
+                  <Text className={`${form.tallaRemera === t ? 'text-white' : 'text-gray-800'}`}>{t}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text className="text-lg font-bold mb-2">Contacto de emergencia</Text>
+            <Text className="text-gray-700 mb-1">Nombre</Text>
+            <TextInput value={form.emergencia.nombre} onChangeText={(t) => setForm((f: any) => ({ ...f, emergencia: { ...f.emergencia, nombre: t } }))} placeholder="Nombre y apellido" className="border border-gray-300 rounded-lg px-3 py-2 mb-3" />
+            <Text className="text-gray-700 mb-1">Teléfono</Text>
+            <TextInput value={form.emergencia.telefono} onChangeText={(t) => setForm((f: any) => ({ ...f, emergencia: { ...f.emergencia, telefono: t } }))} placeholder="Ej: +595..." keyboardType="phone-pad" className="border border-gray-300 rounded-lg px-3 py-2 mb-3" />
+            <Text className="text-gray-700 mb-1">Relación</Text>
+            <TextInput value={form.emergencia.relacion} onChangeText={(t) => setForm((f: any) => ({ ...f, emergencia: { ...f.emergencia, relacion: t } }))} placeholder="Familiar, amigo, etc." className="border border-gray-300 rounded-lg px-3 py-2 mb-3" />
+
+            <Text className="text-lg font-bold mb-2">Salud</Text>
+            <Text className="text-gray-700 mb-1">Alergias (opcional)</Text>
+            <TextInput value={form.salud.alergias} onChangeText={(t) => setForm((f: any) => ({ ...f, salud: { ...f.salud, alergias: t } }))} placeholder="Ej: penicilina, frutos secos" className="border border-gray-300 rounded-lg px-3 py-2 mb-3" />
+
+            <View className="mt-2">
+              <TouchableOpacity onPress={() => setForm((f: any) => ({ ...f, aceptoTerminos: !f.aceptoTerminos }))} className="flex-row items-center mb-2">
+                <Text className="text-2xl mr-2">{form.aceptoTerminos ? '☑' : '☐'}</Text>
+                <Text className="text-gray-800">Acepto Términos y Condiciones</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setForm((f: any) => ({ ...f, aceptoDescargo: !f.aceptoDescargo }))} className="flex-row items-center">
+                <Text className="text-2xl mr-2">{form.aceptoDescargo ? '☑' : '☐'}</Text>
+                <Text className="text-gray-800">Acepto el Descargo de responsabilidad</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View className="flex-row justify-between mt-6">
+              <Button title="Cancelar" variant="secondary" onPress={() => setShowForm(false)} />
+              <Button title="Confirmar inscripción" onPress={submitEnrollment} loading={enrolling} />
+            </View>
+          </ScrollView>
+        </AppShell>
+      </Modal>
     </AppShell>
   );
 }

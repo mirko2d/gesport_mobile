@@ -63,8 +63,18 @@ export default function Stopwatch() {
           <TouchableOpacity onPress={start} className="bg-black px-5 py-3 rounded-full">
             <Text className="text-white font-semibold">Iniciar</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={pause} className="bg-gray-800 px-5 py-3 rounded-full">
-            <Text className="text-white font-semibold">Pausar</Text>
+          <TouchableOpacity
+            onPress={() => {
+              if (running) return pause();
+              // resume when paused
+              const now = Date.now();
+              startRef.current = now - elapsed;
+              setRunning(true);
+              timerRef.current = setInterval(tick, 1000) as unknown as number;
+            }}
+            className="bg-gray-800 px-5 py-3 rounded-full"
+          >
+            <Text className="text-white font-semibold">{running ? 'Pausar' : 'Reanudar'}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={reset} className="bg-gray-200 px-5 py-3 rounded-full">
             <Text className="text-gray-800 font-semibold">Reiniciar</Text>

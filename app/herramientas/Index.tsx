@@ -4,7 +4,6 @@ import { ScrollView, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import AppShell from '../components/AppShell';
 import BMICalculator from '../components/tools/BMICalculator';
-import ChatCoach from '../components/tools/ChatCoach';
 import PaceCalculator from '../components/tools/PaceCalculator';
 import SectionTitle from '../components/ui/SectionTitle';
 
@@ -22,9 +21,6 @@ export default function ToolsScreen() {
           <SectionTitle>RECURSOS</SectionTitle>
           <PaceCalculator />
           <BMICalculator />
-          <View className="mt-6">
-            <ChatCoach />
-          </View>
         </View>
       </ScrollView>
     </AppShell>

@@ -110,8 +110,8 @@ export const updateEvent = async (id: string, payload: any) =>
 
 // ====== Inscripciones ======
 // El back maneja campos estilo DB: usuario_id / evento_id
-export const enroll = async (event_id: string) =>
-  (await api.post("/enrollments/", { evento_id: event_id })).data;
+export const enroll = async (event_id: string, form?: any) =>
+  (await api.post("/enrollments/", { evento_id: event_id, form })).data;
 
 export const unenroll = async (event_id: string) =>
   (

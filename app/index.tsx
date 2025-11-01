@@ -2,12 +2,12 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  Activity,
-  Calendar,
-  ChevronDown,
-  Clock,
-  MapPin,
-  Newspaper
+    Activity,
+    Calendar,
+    ChevronDown,
+    Clock,
+    MapPin,
+    Newspaper
 } from 'lucide-react-native';
 import { cssInterop } from 'nativewind';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -18,6 +18,7 @@ import { PAST_EDITIONS } from '../lib/editions';
 import { SPONSORS, type SponsorItem } from '../lib/sponsors';
 import AppShell from './components/AppShell';
 import Button from './components/ui/Button';
+import HowItWorksModal from './components/ui/HowItWorksModal';
 import SectionTitle from './components/ui/SectionTitle';
 
 // Setup LinearGradient for NativeWind
@@ -439,7 +440,28 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, [fetchEvents]);
   
+  // Derivados: futuros y pasados
+  const upcomingEvents = React.useMemo(() => {
+    const now = Date.now();
+    return (events || []).filter((e) => {
+      if (!e.fecha) return true; // sin fecha: mantener en próximos
+      const ts = new Date(e.fecha).getTime();
+      return !isNaN(ts) && ts >= now;
+    });
+  }, [events]);
+
+  const pastEvents = React.useMemo(() => {
+    const now = Date.now();
+    return (events || []).filter((e) => {
+      if (!e.fecha) return false; // sin fecha no lo consideramos pasado
+      const ts = new Date(e.fecha).getTime();
+      return !isNaN(ts) && ts < now;
+    });
+  }, [events]);
+  
   // UI
+  const [howWorksOpen, setHowWorksOpen] = useState(false);
+
   return (
     <AppShell>
       <ScrollView
@@ -484,6 +506,7 @@ export default function HomeScreen() {
               <Link href="/noticias/Index" asChild>
                 <Button title="Noticias" variant="secondary" />
               </Link>
+              <Button title="¿Cómo funciona?" variant="secondary" onPress={() => setHowWorksOpen(true)} />
             </View>
           </RevealOnScroll>
 
@@ -540,26 +563,86 @@ export default function HomeScreen() {
           </RevealOnScroll>
         </LinearGradient>
 
-        {/* Eventos (cartas) - arriba de Características */}
+        {/* Noticias - ahora arriba de Eventos */}
+        <View className="py-10 px-4 bg-white">
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} direction="left">
+            <View className="flex-row items-center justify-between">
+              <SectionTitle className="text-3xl">NOTICIAS</SectionTitle>
+              <Link href="/noticias/Index" asChild>
+                <TouchableOpacity>
+                  <Text className="text-primary font-semibold">Ver todas</Text>
+                </TouchableOpacity>
+              </Link>
+            </View>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} direction="right">
+            {newsLoading ? (
+              <Text className="text-gray-500 mt-4">Cargando noticias…</Text>
+            ) : news.length === 0 ? (
+              <Text className="text-gray-700 mt-4">No hay noticias por el momento.</Text>
+            ) : (
+              <View className="mt-4">
+                {news.map((n, idx) => (
+                  <RevealOnScroll key={n._id} scrollY={scrollY} viewportHeight={viewportHeight} delay={idx * 80} direction={idx % 2 === 0 ? 'left' : 'right'}>
+                    <Link href="/noticias/Index" asChild>
+                      <TouchableOpacity className="bg-black rounded-2xl p-4 mb-3 relative overflow-hidden">
+                        <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
+                        <View className="flex-row items-center mb-1">
+                          <Newspaper color="#ffffff" size={18} />
+                          <Text className="text-white font-semibold text-lg ml-2" numberOfLines={1}>
+                            {n.title || 'Noticia'}
+                          </Text>
+                        </View>
+                        {n.content ? (
+                          <Text className="text-white/80" numberOfLines={2}>{n.content}</Text>
+                        ) : null}
+                        {n.createdAt ? (
+                          <Text className="text-white/50 text-xs mt-2">{new Date(n.createdAt).toLocaleDateString()}</Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    </Link>
+                  </RevealOnScroll>
+                ))}
+              </View>
+            )}
+          </RevealOnScroll>
+        </View>
+
+        {/* Eventos (cartas) - ahora más destacado y debajo de Noticias */}
         <View className="py-10 px-4 bg-white"
           onLayout={(e) => { eventosBaseY.current = e.nativeEvent.layout.y; }}
         >
           <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={eventosBaseY.current} direction="left">
-            <SectionTitle className="text-3xl">EVENTOS</SectionTitle>
+            <View className="flex-row items-center justify-between">
+              <SectionTitle className="text-3xl">PRÓXIMOS EVENTOS</SectionTitle>
+              <Link href="/events/TodosEvents" asChild>
+                <TouchableOpacity>
+                  <Text className="text-primary font-semibold">Ver todos</Text>
+                </TouchableOpacity>
+              </Link>
+            </View>
+          </RevealOnScroll>
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={40} baseY={eventosBaseY.current} direction="left">
+            <LinearGradient
+              colors={["#000000", "#222222"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={{ height: 3, borderRadius: 9999, width: 200, marginTop: 8 }}
+            />
           </RevealOnScroll>
           <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={60} baseY={eventosBaseY.current} direction="right">
-            <Text className="text-black text-xl leading-7 mt-3 font-medium">Inscribite y viví la experiencia GeSPORT.</Text>
+            <Text className="text-black text-xl leading-7 mt-3 font-bold">¡No te lo pierdas! Inscribite y viví la experiencia GeSPORT.</Text>
           </RevealOnScroll>
           <View className="mt-6">
             {eventsLoading ? (
               <Text className="text-gray-500">Cargando eventos…</Text>
-            ) : events.length === 0 ? (
+            ) : upcomingEvents.length === 0 ? (
               <Text className="text-gray-700">No hay eventos activos por el momento.</Text>
             ) : (
-              events.slice(0, 3).map((ev, idx) => (
+              upcomingEvents.slice(0, 3).map((ev, idx) => (
                 <RevealOnScroll key={ev._id} scrollY={scrollY} viewportHeight={viewportHeight} delay={idx * 80} baseY={eventosBaseY.current} direction={idx % 2 === 0 ? 'left' : 'right'}>
                   <Link href={{ pathname: '/events/[id]', params: { id: ev._id } }} asChild>
-                    <TouchableOpacity className="bg-black rounded-lg p-4 mb-4 relative overflow-hidden" activeOpacity={0.9}>
+                    <TouchableOpacity className="bg-black rounded-2xl p-5 mb-4 relative overflow-hidden shadow-lg hover:opacity-95" activeOpacity={0.9}>
                       <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
                       <Text className="text-white text-2xl font-extrabold" numberOfLines={1}>{ev.titulo}</Text>
                       <View className="flex-row items-center mt-2">
@@ -580,6 +663,19 @@ export default function HomeScreen() {
                           <Text className="text-white/90 ml-2" numberOfLines={1}>{ev.lugar}</Text>
                         </View>
                       ) : null}
+                      <View className="mt-3">
+                        {(() => {
+                          const isPast = ev?.fecha ? new Date(ev.fecha as string).getTime() < Date.now() : false;
+                          const pillClass = isPast ? 'bg-gray-200' : 'bg-white';
+                          const textClass = isPast ? 'text-gray-700' : 'text-black';
+                          const label = isPast ? 'Finalizado' : 'Inscribirme';
+                          return (
+                            <View className={`${pillClass} rounded-full px-3 py-1 self-start`}>
+                              <Text className={`${textClass} font-semibold`}>{label}</Text>
+                            </View>
+                          );
+                        })()}
+                      </View>
                     </TouchableOpacity>
                   </Link>
                 </RevealOnScroll>
@@ -667,44 +763,7 @@ export default function HomeScreen() {
             </RevealOnScroll>
           </View>
           
-          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} baseY={historialBaseY.current}>
-            <View className="bg-white rounded-xl p-5 shadow-md">
-              <View className="flex-row items-center mb-2">
-                <Newspaper color="#000000" size={20} />
-                <Text className="text-coffee text-2xl font-extrabold ml-2">ANUNCIOS</Text>
-              </View>
-              <LinearGradient
-                colors={["#000000", "#222222"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={{ height: 3, borderRadius: 9999, width: 160, marginBottom: 10 }}
-              />
-              {newsLoading ? (
-                <Text className="text-gray-500">Cargando anuncios…</Text>
-              ) : news.length === 0 ? (
-                <Text className="text-gray-700">No hay anuncios por el momento.</Text>
-              ) : (
-                <View className="mt-2">
-                  {news.map((n) => (
-                    <Link href="/noticias/Index" asChild key={n._id}>
-                      <TouchableOpacity className="bg-black rounded-2xl p-4 mb-3 relative overflow-hidden">
-                        <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
-                        <Text className="text-white font-semibold text-lg" numberOfLines={1}>
-                          {n.title || 'Anuncio'}
-                        </Text>
-                        {n.content ? (
-                          <Text className="text-white/80 mt-1" numberOfLines={2}>{n.content}</Text>
-                        ) : null}
-                        {n.createdAt ? (
-                          <Text className="text-white/50 text-xs mt-2">{new Date(n.createdAt).toLocaleDateString()}</Text>
-                        ) : null}
-                      </TouchableOpacity>
-                    </Link>
-                  ))}
-                </View>
-              )}
-            </View>
-          </RevealOnScroll>
+          {/* Noticias moved above Eventos */}
         </View>
         
         {/* Runner Tools */}
@@ -784,6 +843,36 @@ export default function HomeScreen() {
                 </RevealOnScroll>
               </View>
             ))}
+            {/* Listado compacto de eventos finalizados recientes (dinámico del backend) */}
+            {pastEvents.length > 0 ? (
+              <View className="mt-6">
+                <SectionTitle className="text-2xl">EVENTOS FINALIZADOS RECIENTES</SectionTitle>
+                {pastEvents.slice(0, 3).map((ev, idx) => (
+                  <RevealOnScroll key={ev._id} scrollY={scrollY} viewportHeight={viewportHeight} delay={idx * 60} baseY={edicionesBaseY.current} direction={idx % 2 === 0 ? 'left' : 'right'}>
+                    <Link href={{ pathname: '/events/[id]', params: { id: ev._id } }} asChild>
+                      <TouchableOpacity className="bg-white border border-gray-200 rounded-xl p-4 mt-3" activeOpacity={0.9}>
+                        <Text className="text-gray-900 text-lg font-extrabold" numberOfLines={1}>{ev.titulo}</Text>
+                        <View className="flex-row items-center mt-1">
+                          <Calendar color="#6b7280" size={16} />
+                          <Text className="text-gray-600 ml-2">
+                            {ev.fecha ? new Date(ev.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : 'Fecha pasada'}
+                          </Text>
+                          <View className="ml-3 bg-gray-800 px-2 py-0.5 rounded-full self-center">
+                            <Text className="text-white text-xs font-semibold">Finalizado</Text>
+                          </View>
+                        </View>
+                        {ev.lugar ? (
+                          <View className="flex-row items-center mt-1">
+                            <MapPin color="#6b7280" size={16} />
+                            <Text className="text-gray-600 ml-2" numberOfLines={1}>{ev.lugar}</Text>
+                          </View>
+                        ) : null}
+                      </TouchableOpacity>
+                    </Link>
+                  </RevealOnScroll>
+                ))}
+              </View>
+            ) : null}
           </View>
         </View>
         
@@ -806,6 +895,8 @@ export default function HomeScreen() {
         
         {/* Contact section removed to avoid duplication since footer is fixed and larger now */}
       </ScrollView>
+      {/* Modal ¿Cómo funciona? */}
+      <HowItWorksModal visible={howWorksOpen} onClose={() => setHowWorksOpen(false)} />
     </AppShell>
   );
 }

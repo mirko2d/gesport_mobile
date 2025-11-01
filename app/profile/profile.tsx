@@ -56,7 +56,13 @@ export default function ProfileScreen() {
   const [enrollments, setEnrollments] = useState<EnrollmentDoc[]>([]);
   const [results, setResults] = useState<ResultDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [localRuns, setLocalRuns] = useState<{ id: string; date: string; elapsedMs: number; distanceM: number }[]>([]);
+  const [localRuns, setLocalRuns] = useState<{
+    id: string;
+    date: string;
+    elapsedMs: number;
+    distanceM: number;
+    mode?: 'running' | 'walk' | 'cycling';
+  }[]>([]);
   const [goals, setGoals] = useState<{ kmMonthly: number; actMonthly: number }>({ kmMonthly: 20, actMonthly: 8 });
   const [goalsModalOpen, setGoalsModalOpen] = useState(false);
   const [goalsInputKm, setGoalsInputKm] = useState('');
@@ -76,19 +82,28 @@ export default function ProfileScreen() {
         myResults().catch(() => []),
       ]);
       // Local override for avatar (if user changed it in this device)
-      const localAvatar = await AsyncStorage.getItem('@gesport:profile:avatarUrl');
-      setProfile(u ? { ...u, avatarUrl: localAvatar || u.avatarUrl } : null);
+  const avatarKey = authUser?._id ? `@gesport:profile:avatarUrl:${authUser._id}` : '@gesport:profile:avatarUrl';
+  const localAvatar = await AsyncStorage.getItem(avatarKey);
+  setProfile(u ? { ...u, avatarUrl: localAvatar || u.avatarUrl } : null);
       setEnrollments(Array.isArray(ins) ? ins : []);
       setResults(Array.isArray(res) ? res : []);
       // Load local activities
-      const raw = await AsyncStorage.getItem('@gesport:activities');
+  const activitiesKey = authUser?._id ? `@gesport:activities:${authUser._id}` : '@gesport:activities:anon';
+  const raw = await AsyncStorage.getItem(activitiesKey);
       const arr = raw ? JSON.parse(raw) : [];
       const mapped = Array.isArray(arr)
-        ? arr.map((r: any) => ({ id: r.id, date: r.date, elapsedMs: r.elapsedMs, distanceM: r.distanceM }))
+        ? arr.map((r: any) => ({
+            id: r.id,
+            date: r.date,
+            elapsedMs: r.elapsedMs,
+            distanceM: r.distanceM,
+            mode: r.mode,
+          }))
         : [];
       setLocalRuns(mapped);
       // Load user goals (local)
-      const gr = await AsyncStorage.getItem('@gesport:goals');
+      const goalsKey = authUser?._id ? `@gesport:goals:${authUser._id}` : '@gesport:goals:anon';
+      const gr = await AsyncStorage.getItem(goalsKey);
       if (gr) {
         try {
           const parsed = JSON.parse(gr);
@@ -128,24 +143,33 @@ export default function ProfileScreen() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuth, authUser?.role]);
+  }, [isAuth, authUser?._id, authUser?.role]);
 
   // Cuando vuelves a Perfil desde otra pestaña, recarga actividades locales
   useFocusEffect(
     React.useCallback(() => {
       (async () => {
         try {
-          const raw = await AsyncStorage.getItem('@gesport:activities');
+          const activitiesKey = authUser?._id ? `@gesport:activities:${authUser._id}` : '@gesport:activities:anon';
+          const raw = await AsyncStorage.getItem(activitiesKey);
           const arr = raw ? JSON.parse(raw) : [];
           const mapped = Array.isArray(arr)
-            ? arr.map((r: any) => ({ id: r.id, date: r.date, elapsedMs: r.elapsedMs, distanceM: r.distanceM }))
+            ? arr.map((r: any) => ({
+                id: r.id,
+                date: r.date,
+                elapsedMs: r.elapsedMs,
+                distanceM: r.distanceM,
+                mode: r.mode,
+              }))
             : [];
           setLocalRuns(mapped);
           // Reaplicar avatar local si existe
-          const localAvatar = await AsyncStorage.getItem('@gesport:profile:avatarUrl');
+          const avatarKey = authUser?._id ? `@gesport:profile:avatarUrl:${authUser._id}` : '@gesport:profile:avatarUrl';
+          const localAvatar = await AsyncStorage.getItem(avatarKey);
             if (localAvatar) setProfile((prev) => (prev ? { ...prev, avatarUrl: localAvatar } : prev));
           // Reload goals on focus
-          const gr = await AsyncStorage.getItem('@gesport:goals');
+          const goalsKey = authUser?._id ? `@gesport:goals:${authUser._id}` : '@gesport:goals:anon';
+          const gr = await AsyncStorage.getItem(goalsKey);
           if (gr) {
             try {
               const parsed = JSON.parse(gr);
@@ -157,7 +181,7 @@ export default function ProfileScreen() {
           }
         } catch {}
       })();
-    }, [])
+    }, [authUser?._id])
   );
 
   const displayName = profile
@@ -181,7 +205,8 @@ export default function ProfileScreen() {
       const asset = result.assets?.[0];
       if (!asset?.uri) return;
       const { url } = await uploadAvatar(asset.uri);
-      await AsyncStorage.setItem('@gesport:profile:avatarUrl', url);
+      const avatarKey = authUser?._id ? `@gesport:profile:avatarUrl:${authUser._id}` : '@gesport:profile:avatarUrl';
+      await AsyncStorage.setItem(avatarKey, url);
       setProfile((prev) => (prev ? { ...prev, avatarUrl: url } : prev));
       Alert.alert('Listo', 'Foto de perfil actualizada.');
     } catch (e: any) {
@@ -469,9 +494,12 @@ export default function ProfileScreen() {
                 const h = Math.floor(r.elapsedMs / 3600000);
                 const m = Math.floor((r.elapsedMs % 3600000) / 60000);
                 const s = Math.floor((r.elapsedMs % 60000) / 1000);
+                const emoji = r.mode === 'walk' ? '🚶' : r.mode === 'cycling' ? '🚴' : '🏃';
+                const modeLabel = r.mode === 'walk' ? 'Caminata' : r.mode === 'cycling' ? 'Ciclismo' : 'Running';
                 return (
                   <Card key={r.id} className="mt-3 border border-gray-100">
                     <Text className="text-gray-900 font-semibold">{d.toLocaleDateString()} {pad(d.getHours())}:{pad(d.getMinutes())}</Text>
+                    <Text className="text-gray-700 mt-1">Tipo: {emoji} {modeLabel}</Text>
                     <Text className="text-gray-700 mt-1">Distancia: {km} km</Text>
                     <Text className="text-gray-700 mt-1">Tiempo: {pad(h)}:{pad(m)}:{pad(s)}</Text>
                   </Card>
@@ -533,7 +561,8 @@ export default function ProfileScreen() {
                 const next = { kmMonthly: km, actMonthly: act };
                 setGoals(next);
                 try {
-                  await AsyncStorage.setItem('@gesport:goals', JSON.stringify(next));
+                  const goalsKey = authUser?._id ? `@gesport:goals:${authUser._id}` : '@gesport:goals:anon';
+                  await AsyncStorage.setItem(goalsKey, JSON.stringify(next));
                 } catch {}
                 setGoalsModalOpen(false);
               }}
