@@ -1,25 +1,27 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import {
-    Activity,
-    Calendar,
-    ChevronDown,
-    Clock,
-    MapPin,
-    Newspaper
+  Activity,
+  Calendar,
+  ChevronDown,
+  Clock,
+  MapPin,
+  Newspaper
 } from 'lucide-react-native';
 import { cssInterop } from 'nativewind';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Easing, FlatList, Image, ImageSourcePropType, Linking, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { listEvents, listNews } from '../lib/api';
+import { listEvents, listNews, updateMe } from '../lib/api';
 import { PAST_EDITIONS } from '../lib/editions';
 import { SPONSORS, type SponsorItem } from '../lib/sponsors';
 import AppShell from './components/AppShell';
 import Button from './components/ui/Button';
 import HowItWorksModal from './components/ui/HowItWorksModal';
 import SectionTitle from './components/ui/SectionTitle';
+import TermsModal from './components/ui/TermsModal';
 
 // Setup LinearGradient for NativeWind
 cssInterop(LinearGradient, {
@@ -461,6 +463,43 @@ export default function HomeScreen() {
   
   // UI
   const [howWorksOpen, setHowWorksOpen] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
+  const [termsRequiredOpen, setTermsRequiredOpen] = useState(false);
+
+  useEffect(() => {
+    // Mostrar Términos al iniciar sesión si no fueron aceptados (local o backend)
+    (async () => {
+      try {
+        if (user && isAuth) {
+          const key = `@gesport:acceptedTerms:${user._id}`;
+          const stored = await AsyncStorage.getItem(key);
+          const backendAccepted = (user as any)?.acceptedTerms;
+          if (!stored && !backendAccepted) {
+            setTermsRequiredOpen(true);
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
+  }, [user, isAuth]);
+
+  const acceptTermsForUser = async () => {
+    if (!user) return;
+    const key = `@gesport:acceptedTerms:${user._id}`;
+    try {
+      await AsyncStorage.setItem(key, '1');
+      // Intenta persistir en backend si la API lo permite
+        try {
+        await updateMe({ acceptedTerms: true } as any);
+      } catch (e) {
+        // backend puede ignorar; no bloquear al usuario
+      }
+    } catch (e) {
+      // ignore
+    }
+    setTermsRequiredOpen(false);
+  };
 
   return (
     <AppShell>
@@ -897,6 +936,8 @@ export default function HomeScreen() {
       </ScrollView>
       {/* Modal ¿Cómo funciona? */}
       <HowItWorksModal visible={howWorksOpen} onClose={() => setHowWorksOpen(false)} />
+      {/* Términos y Condiciones que se muestra al iniciar sesión (si corresponde) */}
+      <TermsModal visible={termsRequiredOpen || termsOpen} onClose={() => { setTermsOpen(false); setTermsRequiredOpen(false); }} onAccept={acceptTermsForUser} />
     </AppShell>
   );
 }

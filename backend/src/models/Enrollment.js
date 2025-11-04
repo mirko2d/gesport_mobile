@@ -7,8 +7,14 @@ const EnrollmentSchema = new mongoose.Schema(
     estado: { type: String, enum: ['PENDIENTE', 'CONFIRMADA', 'CANCELADA'], default: 'PENDIENTE' },
     pago: {
       estado: { type: String, enum: ['NO_PAGO', 'PENDIENTE', 'APROBADO', 'RECHAZADO'], default: 'NO_PAGO' },
-      referencia: String,
+      referencia: String, // id de pago del proveedor
       monto: Number,
+      moneda: { type: String, default: 'ARS' },
+      proveedor: { type: String, default: 'ninguno' },
+      preferenciaId: String,
+      initPoint: String,
+      reciboUrl: String,
+      pagadoEn: Date,
     },
     form: {
       dni: String,

@@ -126,6 +126,22 @@ export const myEnrollments = async () =>
 export const listEventParticipants = async (event_id: string) =>
   (await api.get(`/enrollments/event/${event_id}`)).data as { count: number; participants: Array<{ _id: string; nombre?: string; apellido?: string; email?: string; avatarUrl?: string }> };
 
+// ====== Pagos ======
+export const createEnrollmentPreference = async (enrollmentId: string) =>
+  (await api.post(`/payments/enrollments/${enrollmentId}/preference`)).data as {
+    preference_id: string;
+    init_point: string;
+    enrollmentId: string;
+    amount: number;
+    currency: string;
+  };
+
+export const getEnrollmentPaymentStatus = async (enrollmentId: string) =>
+  (await api.get(`/payments/enrollments/${enrollmentId}/status`)).data as {
+    estado: 'PENDIENTE' | 'CONFIRMADA' | 'CANCELADA';
+    pago: { estado: 'NO_PAGO' | 'PENDIENTE' | 'APROBADO' | 'RECHAZADO'; referencia?: string };
+  };
+
 // ====== Resultados ======
 export const myResults = async () => (await api.get("/results/mine")).data;
 

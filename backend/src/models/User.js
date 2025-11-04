@@ -11,6 +11,9 @@ const UserSchema = new mongoose.Schema(
     // Datos opcionales del perfil
     pesoKg: { type: Number },
     alturaCm: { type: Number },
+  // Términos y condiciones
+  acceptedTerms: { type: Boolean, default: false },
+  acceptedTermsAt: { type: Date },
     role: { type: String, enum: ['user', 'admin', 'superadmin'], default: 'user' },
   },
   { timestamps: true }

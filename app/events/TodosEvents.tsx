@@ -1,13 +1,15 @@
 import { isPastEvent } from '@features/events';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Calendar, MapPin, Search, Users } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, Image, Modal, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Image, Linking, Modal, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { baseURL, enroll, listEventParticipants, listEvents, myEnrollments } from '../../lib/api';
+import { baseURL, createEnrollmentPreference, enroll, getEnrollmentPaymentStatus, listEventParticipants, listEvents, myEnrollments, unenroll, updateMe } from '../../lib/api';
 import AppShell from '../components/AppShell';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
+import TermsModal from '../components/ui/TermsModal';
 const { width } = Dimensions.get('window');
 
 /** ===== Tipos ===== */
@@ -25,6 +27,7 @@ type ApiEvent = {
   participantes?: number;         // agregado en events.get
   maxParticipantes?: number;      // agregado en events.get
   cupos?: number;                 // backend actual
+  precio?: number;                // backend actual (precio del evento)
 };
 
 type UiEvent = {
@@ -39,10 +42,23 @@ type UiEvent = {
   participantsText: string; // “X / Y” o descriptivo
   participantsCount?: number;
   maxParticipants?: number | null;
+  price?: number;
 };
 
 const PLACEHOLDER_IMG =
   'https://images.unsplash.com/photo-1576267423445-b2e0074d68a4?w=1200&auto=format&fit=crop&q=60';
+
+function formatCurrency(amount?: number, currency: string = 'ARS') {
+  if (typeof amount !== 'number' || isNaN(amount)) return '';
+  try {
+    // Hermes/Expo recientes soportan Intl; si no, caemos a fallback
+    // @ts-ignore
+    if (global.Intl && Intl.NumberFormat) {
+      return new Intl.NumberFormat('es-AR', { style: 'currency', currency }).format(amount);
+    }
+  } catch {}
+  return `$ ${amount.toFixed(2)}`;
+}
 
 /** Mapear evento del backend a evento de UI */
 function mapToUi(ev: ApiEvent): UiEvent {
@@ -66,6 +82,7 @@ function mapToUi(ev: ApiEvent): UiEvent {
     participantsText,
     participantsCount: ev.participantes,
     maxParticipants: ev.maxParticipantes ?? (ev.cupos != null ? ev.cupos : null),
+    price: typeof ev.precio === 'number' ? ev.precio : undefined,
   };
 }
 
@@ -82,6 +99,9 @@ export default function AllEventsScreen() {
   const [participantsModalOpen, setParticipantsModalOpen] = useState<boolean>(false);
   const [participantsLoading, setParticipantsLoading] = useState<boolean>(false);
   const [participants, setParticipants] = useState<Array<{ _id: string; nombre?: string; apellido?: string; email?: string; avatarUrl?: string }>>([]);
+  const [showTerms, setShowTerms] = useState<boolean>(false);
+  const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
+  const [acceptedWaiver, setAcceptedWaiver] = useState<boolean>(false);
   const [enrolledEventIds, setEnrolledEventIds] = useState<Set<string>>(new Set());
   const { isAuth, user } = useAuth();
   const isPrivileged = user?.role === 'admin' || user?.role === 'superadmin';
@@ -90,6 +110,18 @@ export default function AllEventsScreen() {
   const [fullName, setFullName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
+
+  // Campos del formulario obligatorio
+  const [dni, setDni] = useState('');
+  const [birthdate, setBirthdate] = useState(''); // YYYY-MM-DD
+  const [gender, setGender] = useState<'F'|'M'|'X'|'Otro' | ''>('');
+  const [shirtSize, setShirtSize] = useState<'XS'|'S'|'M'|'L'|'XL'|'XXL' | ''>('');
+  const [emgName, setEmgName] = useState('');
+  const [emgPhone, setEmgPhone] = useState('');
+  const [emgRelation, setEmgRelation] = useState('');
+  const [allergies, setAllergies] = useState('');
+  const [conditions, setConditions] = useState('');
+  const [meds, setMeds] = useState('');
 
   const loadEvents = async () => {
     try {
@@ -185,13 +217,82 @@ export default function AllEventsScreen() {
       Alert.alert('Necesitas iniciar sesión', 'Inicia sesión o regístrate para inscribirte.');
       return;
     }
+    // Validaciones locales
+    const missing: string[] = [];
+    if (!dni.trim()) missing.push('DNI');
+    if (!birthdate.trim()) missing.push('Fecha de nacimiento');
+    if (!gender) missing.push('Género');
+    if (!shirtSize) missing.push('Talla de remera');
+    if (!emgName.trim()) missing.push('Contacto de emergencia - Nombre');
+    if (!emgPhone.trim()) missing.push('Contacto de emergencia - Teléfono');
+    if (!acceptedTerms) missing.push('Aceptar Términos y Condiciones');
+    if (!acceptedWaiver) missing.push('Aceptar Descargo de Responsabilidad');
+    if (missing.length) {
+      Alert.alert('Completa el formulario', `Faltan:\n- ${missing.join('\n- ')}`);
+      return;
+    }
     try {
       setEnrolling(true);
-  await enroll(selectedEvent.id);
-      setEnrollModalOpen(false);
-      Alert.alert('Inscripción completada', `Te inscribiste a ${selectedEvent.title}.`);
+      const created = await enroll(selectedEvent.id, {
+        dni: dni.trim(),
+        fechaNacimiento: birthdate.trim(),
+        genero: gender,
+        tallaRemera: shirtSize,
+        emergencia: { nombre: emgName.trim(), telefono: emgPhone.trim(), relacion: emgRelation.trim() || undefined },
+        salud: { alergias: allergies.trim() || undefined, condiciones: conditions.trim() || undefined, medicamentos: meds.trim() || undefined },
+        aceptoTerminos: true,
+        aceptoDescargo: true,
+      });
+      // Si el evento tiene precio, iniciar proceso de pago (Mercado Pago)
+      if (selectedEvent.price && selectedEvent.price > 0 && created?._id) {
+        try {
+          const pref = await createEnrollmentPreference(created._id);
+          if (pref?.init_point) {
+            // Abrir checkout en el navegador o WebView del dispositivo
+            await Linking.openURL(pref.init_point);
+            Alert.alert(
+              'Pago requerido',
+              'Se abrió Mercado Pago para completar el pago. Una vez aprobado, tu inscripción quedará confirmada.'
+            );
+            // Cerrar modal y comenzar polling del estado de pago por un tiempo limitado
+            setEnrollModalOpen(false);
+            const maxAttempts = 24; // ~2 minutos (24 * 5s)
+            const delayMs = 5000;
+            const poll = async (enrollmentId: string, attempt: number) => {
+              try {
+                const status = await getEnrollmentPaymentStatus(enrollmentId);
+                const pagoOk = status?.pago?.estado === 'APROBADO' || status?.estado === 'CONFIRMADA';
+                if (pagoOk) {
+                  setEnrolledEventIds((prev) => new Set<string>([...prev, selectedEvent.id]));
+                  Alert.alert('Pago confirmado', `Tu inscripción a ${selectedEvent.title} está CONFIRMADA.`);
+                  loadEvents();
+                  return;
+                }
+              } catch (e) {
+                // Ignorar errores intermitentes durante el polling
+              }
+              if (attempt < maxAttempts) {
+                setTimeout(() => poll(enrollmentId, attempt + 1), delayMs);
+              } else {
+                Alert.alert('Sin confirmación aún', 'No pudimos confirmar el pago todavía. Puedes verificar más tarde en Mis inscripciones.');
+              }
+            };
+            poll(created._id, 0);
+          } else {
+            Alert.alert('No se pudo iniciar el pago', 'Intenta nuevamente en unos minutos.');
+          }
+        } catch (e) {
+          console.log('Error creando preferencia de pago:', (e as any)?.response?.data || (e as any)?.message || e);
+          Alert.alert('Error al iniciar el pago', 'No se pudo generar el checkout.');
+        }
+      } else {
+        // Evento gratuito: completar inscripción directamente
+        setEnrollModalOpen(false);
+        Alert.alert('Inscripción completada', `Te inscribiste a ${selectedEvent.title}.`);
+        setEnrolledEventIds((prev) => new Set<string>([...prev, selectedEvent.id]));
+      }
+      // Refrescar lista de eventos/inscripciones
       loadEvents();
-  setEnrolledEventIds((prev) => new Set<string>([...prev, selectedEvent.id]));
     } catch (err) {
       const e = err as any;
       console.log('Error al inscribirse:', e?.response?.data || e?.message || e);
@@ -208,6 +309,33 @@ export default function AllEventsScreen() {
     } finally {
       setEnrolling(false);
     }
+  };
+
+  const confirmCancel = (event: UiEvent) => {
+    Alert.alert(
+      'Cancelar inscripción',
+      `¿Seguro que quieres cancelar tu inscripción a ${event.title}?`,
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Sí, cancelar', style: 'destructive',
+          onPress: async () => {
+            try {
+              await unenroll(event.id);
+              setEnrolledEventIds((prev) => {
+                const next = new Set(prev);
+                next.delete(event.id);
+                return next;
+              });
+              Alert.alert('Inscripción cancelada', 'Se canceló tu inscripción correctamente.');
+              loadEvents();
+            } catch (e) {
+              Alert.alert('Error', 'No se pudo cancelar. Intenta nuevamente.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const openParticipants = async (event: UiEvent) => {
@@ -299,8 +427,11 @@ export default function AllEventsScreen() {
               event.maxParticipants > 0 &&
               event.participantsCount >= event.maxParticipants;
             const isEnrolled = enrolledEventIds.has(event.id);
+            const priceLabel = event.price && event.price > 0 ? formatCurrency(event.price) : undefined;
             return (
             <Card
+              variant="gradient"
+              gradientColors={['#ffffff', '#eef2ff']}
               key={event.id}
               className="rounded-lg mb-4 overflow-hidden"
             >
@@ -346,17 +477,35 @@ export default function AllEventsScreen() {
                         <Text className="text-white font-semibold text-sm">Finalizado</Text>
                       </View>
                     ) : null}
+                    {priceLabel ? (
+                      <View className="bg-green-600 px-3 py-1 rounded-full">
+                        <Text className="text-white font-semibold text-sm">{priceLabel}</Text>
+                      </View>
+                    ) : (
+                      <View className="bg-gray-200 px-3 py-1 rounded-full">
+                        <Text className="text-gray-700 font-medium text-sm">Gratis</Text>
+                      </View>
+                    )}
                   </View>
 
                   <View className="flex-row gap-2">
                     {isPrivileged ? (
                       <Button title="Inscriptos" variant="outline" onPress={() => openParticipants(event)} />
                     ) : null}
-                    <Button
-                      title={isPast ? 'Finalizado' : isEnrolled ? 'Inscripto' : isFull ? 'Cupos llenos' : 'Inscribirme'}
-                      onPress={() => openEnrollForm(event)}
-                      disabled={isPast || isFull || isEnrolled}
-                    />
+                    {isEnrolled ? (
+                      <>
+                        <Button title="Cancelar" variant="outline" onPress={() => confirmCancel(event)} />
+                        <View className="bg-gray-800 px-3 py-1 rounded-full justify-center">
+                          <Text className="text-white font-semibold text-sm">Inscripto</Text>
+                        </View>
+                      </>
+                    ) : (
+                      <Button
+                        title={isPast ? 'Finalizado' : isFull ? 'Cupos llenos' : 'Inscribirme'}
+                        onPress={() => openEnrollForm(event)}
+                        disabled={isPast || isFull}
+                      />
+                    )}
                     <Button
                       title="Ver detalles"
                       variant="outline"
@@ -445,6 +594,54 @@ export default function AllEventsScreen() {
                 onChangeText={setPhone}
               />
 
+              {/* Formulario obligatorio */}
+              <Text className="text-gray-900 font-semibold mt-2 mb-2">Datos de inscripción</Text>
+              <Text className="text-gray-800 mb-1">DNI</Text>
+              <TextInput
+                className="border border-gray-300 rounded-lg px-3 py-2 mb-3"
+                placeholder="Tu DNI"
+                value={dni}
+                onChangeText={setDni}
+              />
+              <Text className="text-gray-800 mb-1">Fecha de nacimiento (YYYY-MM-DD)</Text>
+              <TextInput
+                className="border border-gray-300 rounded-lg px-3 py-2 mb-3"
+                placeholder="1990-05-20"
+                value={birthdate}
+                onChangeText={setBirthdate}
+              />
+              <Text className="text-gray-800 mb-1">Género</Text>
+              <View className="flex-row gap-2 mb-3">
+                {(['F','M','X','Otro'] as const).map((g) => (
+                  <TouchableOpacity key={g} onPress={() => setGender(g)} className={`px-3 py-2 rounded-full ${gender===g?'bg-primary':'bg-gray-200'}`}>
+                    <Text className={gender===g? 'text-white font-medium':'text-gray-800'}>{g}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text className="text-gray-800 mb-1">Talla de remera</Text>
+              <View className="flex-row gap-2 mb-3 flex-wrap">
+                {(['XS','S','M','L','XL','XXL'] as const).map((t) => (
+                  <TouchableOpacity key={t} onPress={() => setShirtSize(t)} className={`px-3 py-2 rounded-full ${shirtSize===t?'bg-primary':'bg-gray-200'}`}>
+                    <Text className={shirtSize===t? 'text-white font-medium':'text-gray-800'}>{t}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text className="text-gray-900 font-semibold mt-2 mb-2">Contacto de emergencia</Text>
+              <Text className="text-gray-800 mb-1">Nombre</Text>
+              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-3" placeholder="Nombre de contacto" value={emgName} onChangeText={setEmgName} />
+              <Text className="text-gray-800 mb-1">Teléfono</Text>
+              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-4" placeholder="Teléfono de contacto" value={emgPhone} onChangeText={setEmgPhone} keyboardType="phone-pad" />
+              <Text className="text-gray-800 mb-1">Relación (opcional)</Text>
+              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-4" placeholder="Ej: Familiar, Amigo" value={emgRelation} onChangeText={setEmgRelation} />
+
+              <Text className="text-gray-900 font-semibold mt-2 mb-2">Salud (opcional)</Text>
+              <Text className="text-gray-800 mb-1">Alergias</Text>
+              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-3" placeholder="Alergias" value={allergies} onChangeText={setAllergies} />
+              <Text className="text-gray-800 mb-1">Condiciones</Text>
+              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-3" placeholder="Condiciones" value={conditions} onChangeText={setConditions} />
+              <Text className="text-gray-800 mb-1">Medicamentos</Text>
+              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-4" placeholder="Medicamentos" value={meds} onChangeText={setMeds} />
+
               <View className="flex-row justify-end gap-2">
                 <TouchableOpacity
                   className="px-4 py-2 rounded-lg bg-gray-100"
@@ -453,10 +650,39 @@ export default function AllEventsScreen() {
                 >
                   <Text className="text-gray-800">Cancelar</Text>
                 </TouchableOpacity>
+                <View className="flex-row items-center mr-3">
+                  <TouchableOpacity
+                    onPress={() => setAcceptedTerms((v) => !v)}
+                    accessibilityLabel={acceptedTerms ? 'Casilla aceptada' : 'Casilla no aceptada'}
+                    className={`w-5 h-5 rounded-sm border ${acceptedTerms ? 'bg-primary border-primary' : 'border-gray-300'} mr-3 items-center justify-center`}
+                  >
+                    {acceptedTerms ? <Text className="text-white font-bold">✓</Text> : null}
+                  </TouchableOpacity>
+
+                  <View className="flex-row items-center">
+                    <Text className="text-gray-800 mr-2">Acepto los</Text>
+                    <TouchableOpacity onPress={() => setShowTerms(true)}>
+                      <Text className="text-gray-800 underline">términos y condiciones</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setShowTerms(true)} className="ml-3">
+                      <Text className="text-sm text-gray-600 underline">Ver términos y condiciones</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View className="flex-row items-center mr-3 mb-2">
+                  <TouchableOpacity
+                    onPress={() => setAcceptedWaiver((v) => !v)}
+                    accessibilityLabel={acceptedWaiver ? 'Casilla aceptada' : 'Casilla no aceptada'}
+                    className={`w-5 h-5 rounded-sm border ${acceptedWaiver ? 'bg-primary border-primary' : 'border-gray-300'} mr-3 items-center justify-center`}
+                  >
+                    {acceptedWaiver ? <Text className="text-white font-bold">✓</Text> : null}
+                  </TouchableOpacity>
+                  <Text className="text-gray-800">Acepto el descargo de responsabilidad</Text>
+                </View>
                 <TouchableOpacity
-                  className="px-4 py-2 rounded-lg bg-primary"
+                  className={`px-4 py-2 rounded-lg ${acceptedTerms ? 'bg-primary' : 'bg-gray-300'}`}
                   onPress={submitEnroll}
-                  disabled={enrolling}
+                  disabled={enrolling || !acceptedTerms}
                 >
                   {enrolling ? (
                     <View className="flex-row items-center">
@@ -464,7 +690,11 @@ export default function AllEventsScreen() {
                       <Text className="text-white font-medium ml-2">Inscribiendo…</Text>
                     </View>
                   ) : (
-                    <Text className="text-white font-medium">Confirmar inscripción</Text>
+                    <Text className="text-white font-medium">
+                      {selectedEvent?.price && selectedEvent.price > 0
+                        ? `Pagar ${formatCurrency(selectedEvent.price)}`
+                        : 'Confirmar inscripción'}
+                    </Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -505,6 +735,30 @@ export default function AllEventsScreen() {
         </View>
       </View>
     </Modal>
+
+    <TermsModal
+      visible={showTerms}
+      onClose={() => setShowTerms(false)}
+      onAccept={async () => {
+        setAcceptedTerms(true);
+        setShowTerms(false);
+        try {
+          // Persist locally per-user so modal won't reappear
+          if (user && user._id) {
+            const key = `@gesport:acceptedTerms:${user._id}`;
+            await AsyncStorage.setItem(key, '1');
+            // Try to persist on backend if available
+            try {
+              await updateMe({ acceptedTerms: true } as any);
+            } catch (e) {
+              // ignore backend failures
+            }
+          }
+        } catch (e) {
+          // ignore storage errors
+        }
+      }}
+    />
 
     {/* Modal de inscriptos */}
     <Modal

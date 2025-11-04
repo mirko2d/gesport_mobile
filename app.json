@@ -37,6 +37,9 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "CHAT_WEBHOOK_URL": "http://localhost:5678/webhook/chat"
     }
   }
 }

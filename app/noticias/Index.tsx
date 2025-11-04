@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, Text, View } from 'react-native';
-import Button from '../components/ui/Button';
-import { Link } from 'expo-router';
 import { listNews } from '../../lib/api';
 import AppShell from '../components/AppShell';
 import Card from '../components/ui/Card';
@@ -31,11 +29,6 @@ export default function NoticiasIndex() {
         </View>
       ) : (
         <ScrollView className="flex-1 px-4 py-4">
-          <View className="mb-4">
-            <Link href="/events/TodosEvents" asChild>
-              <Button title="Ver eventos" variant="secondary" />
-            </Link>
-          </View>
           {items.length === 0 ? (
             <Text className="text-gray-600">No hay noticias por el momento.</Text>
           ) : null}

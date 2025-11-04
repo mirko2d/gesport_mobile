@@ -13,6 +13,7 @@ const editionRoutes = require('./routes/editions');
 const rolesRoutes = require('./routes/roles');
 const resultsRoutes = require('./routes/results');
 const uploadRoutes = require('./routes/upload');
+const paymentsRoutes = require('./routes/payments');
 const newsRoutes = require('./routes/news');
 
 const PORT = process.env.PORT || 4000;
@@ -39,6 +40,7 @@ async function start() {
   app.use('/roles', rolesRoutes);
   app.use('/results', resultsRoutes);
   app.use('/upload', uploadRoutes);
+  app.use('/payments', paymentsRoutes);
   app.use('/news', newsRoutes);
 
   app.use((err, req, res, next) => {

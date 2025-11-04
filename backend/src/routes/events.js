@@ -39,6 +39,16 @@ router.delete('/delete/:id', authRequired, requireRole(['superadmin']), async (r
   }
 });
 
+// List my own events (superadmin)
+router.get('/mine', authRequired, requireRole(['superadmin']), async (req, res, next) => {
+  try {
+    const events = await Event.find({ createdBy: req.user._id }).sort({ createdAt: -1 }).lean();
+    res.json(events);
+  } catch (e) {
+    next(e);
+  }
+});
+// Export router
 module.exports = router;
 // Obtener un evento por ID (público)
 router.get('/:id', async (req, res, next) => {

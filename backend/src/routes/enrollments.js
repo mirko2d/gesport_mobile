@@ -22,37 +22,52 @@ router.post('/', authRequired, async (req, res, next) => {
       const current = await Enrollment.countDocuments({ event: evento_id });
       if (current >= ev.cupos) return res.status(409).json({ error: 'Cupo completo' });
     }
-    // Validaciones ligeras de form (opcional)
-    let formPayload = undefined;
-    if (form && typeof form === 'object') {
-      const f = form || {};
-      // Si se envían consentimientos deben ser verdaderos
-      if (f.aceptoTerminos === false || f.aceptoDescargo === false) {
-        return res.status(400).json({ error: 'Debe aceptar términos y descargo' });
-      }
-      // Sanitizar campos esperados
-      formPayload = {
-        dni: typeof f.dni === 'string' ? f.dni.trim() : undefined,
-        fechaNacimiento: f.fechaNacimiento ? new Date(f.fechaNacimiento) : undefined,
-        genero: ['F', 'M', 'X', 'Otro'].includes(f.genero) ? f.genero : undefined,
-        tallaRemera: ['XS', 'S', 'M', 'L', 'XL', 'XXL'].includes(f.tallaRemera) ? f.tallaRemera : undefined,
-        emergencia: {
-          nombre: f?.emergencia?.nombre ? String(f.emergencia.nombre).trim() : undefined,
-          telefono: f?.emergencia?.telefono ? String(f.emergencia.telefono).trim() : undefined,
-          relacion: f?.emergencia?.relacion ? String(f.emergencia.relacion).trim() : undefined,
-        },
-        salud: {
-          alergias: f?.salud?.alergias ? String(f.salud.alergias).trim() : undefined,
-          condiciones: f?.salud?.condiciones ? String(f.salud.condiciones).trim() : undefined,
-          medicamentos: f?.salud?.medicamentos ? String(f.salud.medicamentos).trim() : undefined,
-        },
-        club: typeof f.club === 'string' ? f.club.trim() : undefined,
-        ciudad: typeof f.ciudad === 'string' ? f.ciudad.trim() : undefined,
-        pais: typeof f.pais === 'string' ? f.pais.trim() : undefined,
-        aceptoTerminos: f.aceptoTerminos === true ? true : undefined,
-        aceptoDescargo: f.aceptoDescargo === true ? true : undefined,
-      };
+    // Validaciones requeridas de form
+    if (!form || typeof form !== 'object') {
+      return res.status(400).json({ error: 'Formulario incompleto', fields: ['dni','fechaNacimiento','genero','tallaRemera','emergencia.nombre','emergencia.telefono','aceptoTerminos','aceptoDescargo'] });
     }
+    const f = form || {};
+    const missing = [];
+    const dni = typeof f.dni === 'string' ? f.dni.trim() : '';
+    if (!dni) missing.push('dni');
+    const fechaNacimiento = f.fechaNacimiento ? new Date(f.fechaNacimiento) : null;
+    if (!fechaNacimiento || isNaN(fechaNacimiento.getTime())) missing.push('fechaNacimiento');
+    const genero = ['F', 'M', 'X', 'Otro'].includes(f.genero) ? f.genero : null;
+    if (!genero) missing.push('genero');
+    const tallaRemera = ['XS', 'S', 'M', 'L', 'XL', 'XXL'].includes(f.tallaRemera) ? f.tallaRemera : null;
+    if (!tallaRemera) missing.push('tallaRemera');
+    const emergenciaNombre = f?.emergencia?.nombre ? String(f.emergencia.nombre).trim() : '';
+    const emergenciaTelefono = f?.emergencia?.telefono ? String(f.emergencia.telefono).trim() : '';
+    if (!emergenciaNombre) missing.push('emergencia.nombre');
+    if (!emergenciaTelefono) missing.push('emergencia.telefono');
+    if (f.aceptoTerminos !== true) missing.push('aceptoTerminos');
+    if (f.aceptoDescargo !== true) missing.push('aceptoDescargo');
+    if (missing.length) {
+      return res.status(400).json({ error: 'Formulario incompleto', fields: missing });
+    }
+
+    // Sanitizar y construir payload
+    const formPayload = {
+      dni,
+      fechaNacimiento,
+      genero,
+      tallaRemera,
+      emergencia: {
+        nombre: emergenciaNombre,
+        telefono: emergenciaTelefono,
+        relacion: f?.emergencia?.relacion ? String(f.emergencia.relacion).trim() : undefined,
+      },
+      salud: {
+        alergias: f?.salud?.alergias ? String(f.salud.alergias).trim() : undefined,
+        condiciones: f?.salud?.condiciones ? String(f.salud.condiciones).trim() : undefined,
+        medicamentos: f?.salud?.medicamentos ? String(f.salud.medicamentos).trim() : undefined,
+      },
+      club: typeof f.club === 'string' ? f.club.trim() : undefined,
+      ciudad: typeof f.ciudad === 'string' ? f.ciudad.trim() : undefined,
+      pais: typeof f.pais === 'string' ? f.pais.trim() : undefined,
+      aceptoTerminos: true,
+      aceptoDescargo: true,
+    };
 
     const enr = await Enrollment.create({ user: userId, event: evento_id, form: formPayload });
     res.status(201).json(enr);
