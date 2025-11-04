@@ -3,12 +3,12 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  Activity,
-  Calendar,
-  ChevronDown,
-  Clock,
-  MapPin,
-  Newspaper
+    Activity,
+    Calendar,
+    ChevronDown,
+    Clock,
+    MapPin,
+    Newspaper
 } from 'lucide-react-native';
 import { cssInterop } from 'nativewind';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -535,17 +535,25 @@ export default function HomeScreen() {
             </View>
           </RevealOnScroll>
           <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={180} direction="up">
-            <View className="flex-row justify-center gap-3 mb-6">
-              <Link href="/masinformacion/Index" asChild>
-                <Button title="Conócenos" variant="secondary" />
-              </Link>
-              <Link href="/events/TodosEvents" asChild>
-                <Button title="Ver eventos" variant="primary" />
-              </Link>
-              <Link href="/noticias/Index" asChild>
-                <Button title="Noticias" variant="secondary" />
-              </Link>
-              <Button title="¿Cómo funciona?" variant="secondary" onPress={() => setHowWorksOpen(true)} />
+            <View className="flex-row flex-wrap justify-center mb-6" style={{ rowGap: 8, columnGap: 8 }}>
+              <View style={{ flexGrow: 1, flexBasis: '48%', minWidth: 150 }}>
+                <Link href="/masinformacion/Index" asChild>
+                  <Button title="Conócenos" variant="secondary" />
+                </Link>
+              </View>
+              <View style={{ flexGrow: 1, flexBasis: '48%', minWidth: 150 }}>
+                <Link href="/events/TodosEvents" asChild>
+                  <Button title="Ver eventos" variant="primary" />
+                </Link>
+              </View>
+              <View style={{ flexGrow: 1, flexBasis: '48%', minWidth: 150 }}>
+                <Link href="/noticias/Index" asChild>
+                  <Button title="Noticias" variant="secondary" />
+                </Link>
+              </View>
+              <View style={{ flexGrow: 1, flexBasis: '48%', minWidth: 150 }}>
+                <Button title="¿Cómo funciona?" variant="secondary" onPress={() => setHowWorksOpen(true)} />
+              </View>
             </View>
           </RevealOnScroll>
 

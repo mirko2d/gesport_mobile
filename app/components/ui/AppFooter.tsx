@@ -2,14 +2,16 @@ import { usePathname, useRouter } from 'expo-router';
 import { MessageCircle, Newspaper, User, Zap } from 'lucide-react-native';
 import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../context/AuthContext';
 
 // Bottom navigation bar: Noticias, Actividad, Herramientas, Perfil
-export default function AppFooter() {
+export default function AppFooter({ extraBottomSpace = 0 }: { extraBottomSpace?: number }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useAuth();
   const isPrivileged = user?.role === 'admin' || user?.role === 'superadmin';
+  const insets = useSafeAreaInsets();
 
   const Tab = ({
     label,
@@ -55,13 +57,17 @@ export default function AppFooter() {
   return (
     <View
       style={{
-        flexDirection: 'row',
         backgroundColor: chatMode ? '#000' : '#fff',
         borderTopWidth: chatMode ? 0 : 1,
         borderTopColor: chatMode ? '#000' : '#E5E7EB',
-        paddingHorizontal: 8,
       }}
     >
+      <View
+        style={{
+          flexDirection: 'row',
+          paddingHorizontal: 8,
+        }}
+      >
       {isPrivileged ? (
         <>
           <Tab
@@ -117,6 +123,9 @@ export default function AppFooter() {
           />
         </>
       )}
+      </View>
+      {/* Spacer inferior: mantiene los iconos en la misma posición visual, pero extiende el fondo hasta el borde inferior */}
+      <View style={{ height: extraBottomSpace + (insets?.bottom || 0), backgroundColor: chatMode ? '#000' : '#fff' }} />
     </View>
   );
 }

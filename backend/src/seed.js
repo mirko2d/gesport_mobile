@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const User = require('./models/User');
 const Event = require('./models/Event');
 const Edition = require('./models/Edition');
+const Result = require('./models/Result');
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/gesport';
 
@@ -69,17 +70,64 @@ async function seed() {
     console.log('Usuarios demo listos (SEED_DEMO_USERS=1)');
   }
 
-  // Events
-  if ((await Event.countDocuments()) === 0) {
-    const now = new Date();
-    const in10 = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000);
-    const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    await Event.create([
-      { titulo: 'Media Maratón GESport 21K', descripcion: 'Circuito urbano', fecha: in30, lugar: 'Ciudad', categoria: 'CARRERA', afiche: '', cupos: 500, precio: 20, activo: true },
-      { titulo: 'Entrenamiento Grupal', descripcion: 'Ritmo progresivo', fecha: in10, lugar: 'Parque Central', categoria: 'ENTRENAMIENTO', afiche: '', cupos: 50, precio: 0, activo: true },
-    ]);
-    console.log('Seeded events');
-  }
+  // Eventos: agregar Costanera de Formosa con imágenes
+  const ensureEvent = async (payload) => {
+    const exists = await Event.findOne({ titulo: payload.titulo });
+    if (exists) return exists;
+    return Event.create(payload);
+  };
+
+  const now = new Date();
+  const in12 = new Date(now.getTime() + 12 * 24 * 60 * 60 * 1000);
+  const in25 = new Date(now.getTime() + 25 * 24 * 60 * 60 * 1000);
+  const yesterday = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
+
+  // Imágenes de referencia de gente corriendo / costanera (libres de uso de Unsplash)
+  const runningImgs = [
+    'https://images.unsplash.com/photo-1546484959-f90638d2fc01?q=80&w=1200&auto=format&fit=crop', // grupo corriendo
+    'https://images.unsplash.com/photo-1517504734586-058f9b133ff8?q=80&w=1200&auto=format&fit=crop', // corredor en ruta
+    'https://images.unsplash.com/photo-1499028344343-cd173ffc68a9?q=80&w=1200&auto=format&fit=crop', // jogging atardecer
+    'https://images.unsplash.com/photo-1526405074750-76fce69379e6?q=80&w=1200&auto=format&fit=crop', // grupo urbano
+    'https://images.unsplash.com/photo-1508606572321-901ea443707f?q=80&w=1200&auto=format&fit=crop', // pista atletismo
+    'https://images.unsplash.com/photo-1517837016564-cb6f2b1e56a0?q=80&w=1200&auto=format&fit=crop', // zapatillas running
+  ];
+
+  const evMaraton = await ensureEvent({
+    titulo: 'Maratón Costanera de Formosa 2025',
+    descripcion: 'Recorrido bordeando la Costanera de Formosa. Largada y llegada sobre la Av. Costanera.',
+    fecha: yesterday,
+    lugar: 'Costanera de Formosa',
+    categoria: 'CARRERA',
+    afiche: runningImgs[0],
+    cupos: 2000,
+    precio: 0,
+    activo: true,
+  });
+
+  await ensureEvent({
+    titulo: 'Nocturna 10K Costanera',
+    descripcion: 'Carrera nocturna por la Costanera con iluminación LED y música.',
+    fecha: in12,
+    lugar: 'Costanera de Formosa',
+    categoria: 'CARRERA',
+    afiche: runningImgs[1],
+    cupos: 800,
+    precio: 0,
+    activo: true,
+  });
+
+  await ensureEvent({
+    titulo: 'Entrenamiento en la Costanera',
+    descripcion: 'Fartlek ligero y técnica de carrera junto al río.',
+    fecha: in25,
+    lugar: 'Costanera de Formosa',
+    categoria: 'ENTRENAMIENTO',
+    afiche: runningImgs[2],
+    cupos: 120,
+    precio: 0,
+    activo: true,
+  });
+  console.log('Eventos de la Costanera listos');
 
   // Editions
   if ((await Edition.countDocuments()) === 0) {
@@ -90,12 +138,8 @@ async function seed() {
         fecha: '2023-09-10',
         lugar: 'Ciudad',
         descripcion: 'Una edición inolvidable con más de 2000 corredores.',
-        imagenPortada: 'https://picsum.photos/seed/gesport2023/1200/600',
-        galeria: [
-          'https://picsum.photos/seed/gesport2023a/800/600',
-          'https://picsum.photos/seed/gesport2023b/800/600',
-          'https://picsum.photos/seed/gesport2023c/800/600'
-        ],
+        imagenPortada: runningImgs[3],
+        galeria: [runningImgs[3], runningImgs[4], runningImgs[5]],
         carreras: [
           {
             nombre: '21K',
@@ -118,11 +162,8 @@ async function seed() {
         fecha: '2022-09-11',
         lugar: 'Ciudad',
         descripcion: 'Regreso a las calles con récord de participación.',
-        imagenPortada: 'https://picsum.photos/seed/gesport2022/1200/600',
-        galeria: [
-          'https://picsum.photos/seed/gesport2022a/800/600',
-          'https://picsum.photos/seed/gesport2022b/800/600'
-        ],
+        imagenPortada: runningImgs[4],
+        galeria: [runningImgs[4], runningImgs[5]],
         carreras: [
           {
             nombre: '21K',
@@ -135,6 +176,65 @@ async function seed() {
       }
     ]);
     console.log('Seeded editions');
+  }
+
+  // Opcional: actualizar imágenes de eventos existentes si SEED_UPDATE_IMAGES=1
+  if (process.env.SEED_UPDATE_IMAGES === '1') {
+    const updates = [
+      { titulo: 'Maratón Costanera de Formosa 2025', afiche: runningImgs[0] },
+      { titulo: 'Nocturna 10K Costanera', afiche: runningImgs[1] },
+      { titulo: 'Entrenamiento en la Costanera', afiche: runningImgs[2] },
+    ];
+    for (const u of updates) {
+      await Event.findOneAndUpdate({ titulo: u.titulo }, { $set: { afiche: u.afiche } });
+    }
+    console.log('Actualizadas imágenes de eventos (SEED_UPDATE_IMAGES=1)');
+  }
+
+  // Opcional: actualizar imágenes de ediciones existentes si SEED_UPDATE_EDITION_IMAGES=1
+  if (process.env.SEED_UPDATE_EDITION_IMAGES === '1') {
+    const eds = await Edition.find().lean();
+    for (const [i, ed] of eds.entries()) {
+      const portada = runningImgs[(i + 3) % runningImgs.length];
+      const galeria = [runningImgs[(i + 3) % runningImgs.length], runningImgs[(i + 4) % runningImgs.length], runningImgs[(i + 5) % runningImgs.length]];
+      await Edition.findByIdAndUpdate(ed._id, { $set: { imagenPortada: portada, galeria } });
+    }
+    console.log('Actualizadas imágenes de ediciones (SEED_UPDATE_EDITION_IMAGES=1)');
+  }
+
+  // Usuarios y resultados de la maratón
+  const runners = [
+    { nombre: 'María', apellido: 'Gómez', email: 'maria.gomez@gesport.test', contrasenia: 'gesport123' },
+    { nombre: 'José', apellido: 'Benítez', email: 'jose.benitez@gesport.test', contrasenia: 'gesport123' },
+    { nombre: 'Lucas', apellido: 'Ramírez', email: 'lucas.ramirez@gesport.test', contrasenia: 'gesport123' },
+    { nombre: 'Sofía', apellido: 'Acosta', email: 'sofia.acosta@gesport.test', contrasenia: 'gesport123' },
+    { nombre: 'Diego', apellido: 'Rojas', email: 'diego.rojas@gesport.test', contrasenia: 'gesport123' },
+  ];
+
+  const createdUsers = [];
+  for (const ru of runners) {
+    let u = await User.findOne({ email: ru.email });
+    if (!u) u = await User.create(ru);
+    createdUsers.push(u);
+  }
+
+  // Crear resultados si no existen para este evento
+  const existingResults = await Result.countDocuments({ event: evMaraton._id });
+  if (existingResults === 0) {
+    const baseFinish = new Date(evMaraton.fecha || new Date());
+    const resultsPayload = createdUsers.map((u, idx) => ({
+      event: evMaraton._id,
+      user: u._id,
+      position: idx + 1,
+      dorsal: String(100 + idx),
+      timeMs: (60 * 60 * 1000) + idx * 90 * 1000, // ~1:00:00 + 1:30 min
+      finishedAt: new Date(baseFinish.getTime() + (idx + 60) * 60 * 1000),
+      note: 'Llegada oficial',
+    }));
+    await Result.insertMany(resultsPayload);
+    console.log('Resultados de maratón cargados');
+  } else {
+    console.log('Resultados existentes para maratón; no se duplican');
   }
 
   await mongoose.disconnect();

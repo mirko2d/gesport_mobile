@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Calendar, MapPin, Search, Users } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, Image, Linking, Modal, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Image, Linking, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { baseURL, createEnrollmentPreference, enroll, getEnrollmentPaymentStatus, listEventParticipants, listEvents, myEnrollments, unenroll, updateMe } from '../../lib/api';
 import AppShell from '../components/AppShell';
@@ -437,7 +437,7 @@ export default function AllEventsScreen() {
             >
               <Image
                 source={{ uri: event.image }}
-                style={{ width: width - 32, height: 160 }}
+                style={{ width: '100%', height: 160 }}
                 className="rounded-t-lg"
                 resizeMode="cover"
               />
@@ -492,6 +492,19 @@ export default function AllEventsScreen() {
                     {isPrivileged ? (
                       <Button title="Inscriptos" variant="outline" onPress={() => openParticipants(event)} />
                     ) : null}
+                    {/* Acceso rápido a resultados y contador */}
+                    <Button
+                      title="Resultados"
+                      variant="outline"
+                      onPress={() => router.push({ pathname: '/events/[id]/results', params: { id: event.id } })}
+                    />
+                    {user?.role === 'superadmin' ? (
+                      <Button
+                        title="Contador meta"
+                        variant="outline"
+                        onPress={() => router.push({ pathname: '/events/[id]/contador', params: { id: event.id } })}
+                      />
+                    ) : null}
                     {isEnrolled ? (
                       <>
                         <Button title="Cancelar" variant="outline" onPress={() => confirmCancel(event)} />
@@ -527,29 +540,7 @@ export default function AllEventsScreen() {
         )}
       </ScrollView>
 
-      {/* Bottom bar */}
-      <View className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200">
-        <View className="flex-row justify-between items-center px-6 py-3">
-          <View className="flex-row items-center">
-            <TouchableOpacity
-              className="flex-row items-center mr-6"
-              onPress={() => router.push('/profile/profile')}
-            >
-              <Text className="text-primary font-medium">Perfil</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Pressable
-            onPress={() => router.push('/calendario/Calendar')}
-            style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.97 : 1 }] }]}
-            android_ripple={{ color: '#bfdbfe', borderless: false }}
-            className="flex-row items-center bg-primary px-4 py-2 rounded-full"
-          >
-            <Calendar color="white" size={20} />
-            <Text className="text-white font-semibold ml-2">Calendario</Text>
-          </Pressable>
-        </View>
-      </View>
+      {/* Bottom bar eliminada para evitar superposición con el footer global */}
   </AppShell>
     {/* Modal de inscripción */}
   <Modal
@@ -558,8 +549,16 @@ export default function AllEventsScreen() {
       animationType="fade"
       onRequestClose={() => setEnrollModalOpen(false)}
     >
-      <View className="flex-1 bg-black/60 items-center justify-center px-6">
-        <View className="bg-white rounded-2xl w-full p-5">
+      <View className="flex-1 bg-black/60 px-6">
+        {/* Empuja el contenido cuando aparece el teclado y permite scroll */}
+        <View style={{ flex: 1, justifyContent: 'center' }}>
+          <View className="bg-white rounded-2xl w-full max-h-[85%]">
+            <ScrollView
+              className="w-full"
+              contentContainerStyle={{ padding: 20, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
           <Text className="text-lg font-bold text-gray-900 mb-1">Inscribirme</Text>
           <Text className="text-gray-600 mb-4">
             {selectedEvent ? `Evento: ${selectedEvent.title}` : ''}
@@ -650,7 +649,7 @@ export default function AllEventsScreen() {
                 >
                   <Text className="text-gray-800">Cancelar</Text>
                 </TouchableOpacity>
-                <View className="flex-row items-center mr-3">
+                <View className="flex-row items-center mr-3 mt-1">
                   <TouchableOpacity
                     onPress={() => setAcceptedTerms((v) => !v)}
                     accessibilityLabel={acceptedTerms ? 'Casilla aceptada' : 'Casilla no aceptada'}
@@ -669,7 +668,7 @@ export default function AllEventsScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
-                <View className="flex-row items-center mr-3 mb-2">
+                <View className="flex-row items-center mr-3 mb-3">
                   <TouchableOpacity
                     onPress={() => setAcceptedWaiver((v) => !v)}
                     accessibilityLabel={acceptedWaiver ? 'Casilla aceptada' : 'Casilla no aceptada'}
@@ -732,6 +731,8 @@ export default function AllEventsScreen() {
               </View>
             </>
           )}
+            </ScrollView>
+          </View>
         </View>
       </View>
     </Modal>

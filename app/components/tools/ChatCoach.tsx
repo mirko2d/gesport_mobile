@@ -48,82 +48,65 @@ function Stripes({
 }
 
 function resolveChatWebhookURL(): string {
-  // 1) Explicit env
+  // Prefer explicit config; no UI prompts.
   const envUrl = process.env.EXPO_PUBLIC_CHAT_WEBHOOK_URL as string | undefined;
-  if (envUrl) return envUrl;
-
-  // 2) app.json extra
   const extraUrl = (Constants.expoConfig?.extra as any)?.CHAT_WEBHOOK_URL as string | undefined;
-  if (extraUrl) return extraUrl;
 
-  // 3) Derive from Expo dev server host (LAN IP preferred)
-  // debuggerHost: "192.168.x.x:19000" or "localhost:19000"
-  // hostUri: "192.168.x.x:8081"
-  // @ts-ignore SDK differences
+  const pickFromHostCand = () => {
+    // Derive from Expo dev server host to work on physical devices in LAN
+    // @ts-ignore differences across SDKs
+    const hostCand: string = Constants.expoGoConfig?.debuggerHost || Constants.expoConfig?.hostUri || '';
+    if (hostCand) {
+      const host = hostCand.split(':')[0];
+      if (host && host !== 'localhost' && host !== '127.0.0.1') return host;
+    }
+    return null;
+  };
+
+  const rehostIfLocal = (urlStr: string): string | null => {
+    try {
+      const u = new URL(urlStr);
+      const isLocal = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+      if (!isLocal) return urlStr; // already a reachable host for devices
+      const host = pickFromHostCand();
+      if (host) {
+        const port = u.port || '5678';
+        const path = u.pathname && u.pathname !== '/' ? u.pathname : '/webhook/chat';
+        return `http://${host}:${port}${path}`;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  if (envUrl) {
+    const adjusted = rehostIfLocal(envUrl);
+    if (adjusted) return adjusted;
+    return envUrl;
+  }
+  if (extraUrl) {
+    const adjusted = rehostIfLocal(extraUrl);
+    if (adjusted) return adjusted;
+    return extraUrl;
+  }
+
+  // Derive from Expo dev server host to work on physical devices in LAN
+  // @ts-ignore differences across SDKs
   const hostCand: string = Constants.expoGoConfig?.debuggerHost || Constants.expoConfig?.hostUri || '';
   if (hostCand) {
+    // hostCand looks like "192.168.1.10:19000" or "localhost:19000" or "192.168.1.10:8081"
     const host = hostCand.split(':')[0];
-    if (Platform.OS === 'android') {
-      // En emulador Android, preferimos 10.0.2.2 cuando el host no es una IP LAN típica
-      const isLikelyLan = /^192\.168\.|^10\.(?!0\.2\.2)/.test(host);
-      const isLocal = host === '127.0.0.1' || host === 'localhost';
-      const isWeird = host.startsWith('10.254.') || host.startsWith('172.') || host.startsWith('169.254.');
-      if (isLocal || !isLikelyLan || isWeird) {
-  return 'http://localhost:5678/webhook/chat';
-      }
-    }
-    if (host && host !== '127.0.0.1' && host !== 'localhost') {
-  return `http://localhost:5678/webhook/chat`;
+    if (host && host !== 'localhost' && host !== '127.0.0.1') {
+      return `http://${host}:5678/webhook/chat`;
     }
   }
-
-  // 4) Emulators / local fallbacks
-  if (Platform.OS === 'android') return 'http://localhost:5678/webhook/chat';
+  // Emulator fallback (not shown in UI)
+  if (Platform.OS === 'android') return 'http://10.0.2.2:5678/webhook/chat';
   return 'http://localhost:5678/webhook/chat';
 }
 
-function normalizeN8nUrl(raw: string): string {
-  // Ensure we hit the proper n8n webhook base. If user typed just "/chat" or left out base, default to production base "/webhook/chat".
-  try {
-    const u = new URL(raw);
-    if (u.pathname === '/chat') {
-      u.pathname = '/chat';
-      return u.toString();
-    }
-    if (u.pathname === '' || u.pathname === '/') {
-      u.pathname = '/webhook/chat';
-      return u.toString();
-    }
-    return raw;
-  } catch {
-    // If it's not a full URL, try to coerce (e.g., user typed only host:port or path)
-    if (/^https?:\/\//i.test(raw)) return raw;
-    // If it's something like 192.168.1.10:5678 then prefix http:// and add /webhook/chat
-    if (/^([\w.-]+)(:\d+)?(\/.*)?$/.test(raw)) {
-      const match = raw.match(/^([\w.-]+)(:\d+)?(\/.*)?$/)!;
-      const host = match[1];
-      const port = match[2] || ':5678';
-      const path = match[3] || '/webhook/chat';
-      return `http://${host}${port}${path}`;
-    }
-    return raw;
-  }
-}
-
-function isLikelyUnreachable(url: string): boolean {
-  try {
-    const u = new URL(url);
-    const h = (u.hostname || '').toLowerCase();
-    return (
-      h === 'localhost' ||
-      h === '127.0.0.1' ||
-      h.startsWith('10.254.') || // direcciones virtuales poco accesibles desde móviles
-      h === ''
-    );
-  } catch {
-    return true;
-  }
-}
+// Removed URL normalization and reachability hints to avoid exposing debug guidance in UI
 
 async function sendToN8n(message: string, sessionId: string, webhookUrl: string): Promise<string> {
   try {
@@ -147,10 +130,7 @@ async function sendToN8n(message: string, sessionId: string, webhookUrl: string)
       return txt?.trim() || 'Sin respuesta.';
     }
   } catch (e: any) {
-    return `No pude conectar con el chat (${e?.message || 'error de red'}). URL usada: ${webhookUrl}\nVerifica que:
-- El servidor n8n esté accesible desde tu dispositivo (misma red LAN).
-- Si estás en un emulador Android, usa 10.0.2.2 en lugar de localhost.
-- Define EXPO_PUBLIC_CHAT_WEBHOOK_URL con la URL correcta (p. ej., http://TU-IP-LAN:5678/webhook/chat) o usa app.json->extra.CHAT_WEBHOOK_URL.`;
+    return 'No pude conectar con el chat. Intenta más tarde.';
   }
 }
 
@@ -165,9 +145,7 @@ export default function ChatCoach({ fullScreen = false }: { fullScreen?: boolean
   const [loading, setLoading] = useState(false);
   const listRef = useRef<ScrollView>(null);
   const [sessionId, setSessionId] = useState<string>('');
-  const [customWebhookUrl, setCustomWebhookUrl] = useState<string | null>(null);
-  const [showUrlEditor, setShowUrlEditor] = useState(false);
-  const [urlInput, setUrlInput] = useState('');
+  // URL de webhook fija; no editable desde el chat
   const [showMenu, setShowMenu] = useState(false);
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [fontScale, setFontScale] = useState<'sm' | 'md' | 'lg'>('md');
@@ -310,12 +288,10 @@ export default function ChatCoach({ fullScreen = false }: { fullScreen?: boolean
     setShowMenu(false);
   }
 
-  // Load any locally overridden webhook URL
+  // Load font scale preference only
   useEffect(() => {
     (async () => {
       try {
-        const saved = await AsyncStorage.getItem('@gesport:chat:webhookUrl');
-        if (saved) setCustomWebhookUrl(saved);
         const fs = await AsyncStorage.getItem('@gesport:chat:fontScale');
         if (fs === 'sm' || fs === 'md' || fs === 'lg') setFontScale(fs);
       } catch {}
@@ -338,7 +314,7 @@ export default function ChatCoach({ fullScreen = false }: { fullScreen?: boolean
     setLoading(true);
 
     try {
-      const finalWebhook = "http://10.0.2.2:5678/webhook/chat";
+      const finalWebhook = resolveChatWebhookURL();
       const answer = await sendToN8n(text, sessionId || 'anon', finalWebhook);
       const botMsg: Msg = { id: `a-${Date.now()}`, role: 'assistant', content: answer };
       setMessages((prev) => {
@@ -372,7 +348,6 @@ export default function ChatCoach({ fullScreen = false }: { fullScreen?: boolean
   };
 
   const containerClass = fullScreen ? 'flex-1 bg-black px-4 py-4 relative overflow-hidden' : 'bg-black rounded-2xl p-4 relative overflow-hidden';
-  const resolvedUrl = (customWebhookUrl && customWebhookUrl.trim().length > 0) ? customWebhookUrl!.trim() : resolveChatWebhookURL();
 
   return (
     <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', android: undefined })} style={{ flex: fullScreen ? 1 : undefined }}>
@@ -432,41 +407,7 @@ export default function ChatCoach({ fullScreen = false }: { fullScreen?: boolean
           </>
         ) : null}
 
-        {/* Warning banner when URL seems unreachable */}
-        {isLikelyUnreachable(resolvedUrl) ? (
-          <View className="bg-yellow-500/20 border border-yellow-500/40 rounded-xl p-2 mb-2">
-            <Text className="text-yellow-200 text-xs">
-              La URL actual del webhook parece no ser accesible desde tu dispositivo. Configúrala con tu IP LAN o usa 10.0.2.2 si es un emulador Android.
-            </Text>
-            <View className="flex-row mt-2">
-              <TouchableOpacity
-                onPress={async () => {
-                  const candidate = 'http://localhost:5678/webhook/chat';
-                  try {
-                    await AsyncStorage.setItem('@gesport:chat:webhookUrl', candidate);
-                    setCustomWebhookUrl(candidate);
-                  } catch {}
-                }}
-                activeOpacity={0.9}
-              >
-                <View className="px-3 py-1 mr-2 rounded-full bg-yellow-500/40">
-                  <Text className="text-white text-xs">Usar 10.0.2.2 (AVD)</Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowUrlEditor(true);
-                  setUrlInput('http://localhost:5678/webhook/chat');
-                }}
-                activeOpacity={0.9}
-              >
-                <View className="px-3 py-1 rounded-full bg-yellow-500/40">
-                  <Text className="text-white text-xs">Configurar IP LAN…</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : null}
+        {/* Se eliminó la banda de advertencia y edición de webhook para evitar mensajes de configuración técnica */}
 
         <ScrollView
           ref={listRef}
@@ -508,64 +449,7 @@ export default function ChatCoach({ fullScreen = false }: { fullScreen?: boolean
         </View>
 
         <Text className="text-white/60 text-xs mt-3">Consejos generales; ante dudas médicas, consulta a un profesional.</Text>
-        {/* Debug + quick override: show and edit resolved webhook URL */}
-        <View className="mt-1">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-white/40 text-[10px]">Webhook: {resolvedUrl}{customWebhookUrl ? ' (personalizado)' : ''}</Text>
-            <TouchableOpacity onPress={() => { setShowUrlEditor((s) => !s); setUrlInput(resolvedUrl); }}>
-              <Text className="text-white/50 text-[10px] underline">{showUrlEditor ? 'Cerrar' : 'Editar'}</Text>
-            </TouchableOpacity>
-          </View>
-          {showUrlEditor ? (
-            <View className="bg-white/10 rounded-md px-2 py-2 mt-1">
-              <TextInput
-                value={urlInput}
-                onChangeText={setUrlInput}
-                placeholder="http://X.X.X.X/webhook/chat"
-                placeholderTextColor="#cfcfcf"
-                className="text-white min-h-[36px]"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <View className="flex-row mt-2 space-x-3">
-                <TouchableOpacity
-                  onPress={async () => {
-                    let val = urlInput.trim();
-                    if (!/^https?:\/\//i.test(val)) return;
-                    try {
-                      val = normalizeN8nUrl(val);
-                      await AsyncStorage.setItem('@gesport:chat:webhookUrl', val);
-                      setCustomWebhookUrl(val);
-                      setShowUrlEditor(false);
-                    } catch {}
-                  }}
-                  activeOpacity={0.9}
-                >
-                  <View className="px-3 py-1 rounded-full bg-primary">
-                    <Text className="text-white text-xs font-semibold">Guardar</Text>
-                  </View>
-                </TouchableOpacity>
-                {customWebhookUrl ? (
-                  <TouchableOpacity
-                    onPress={async () => {
-                      try {
-                        await AsyncStorage.removeItem('@gesport:chat:webhookUrl');
-                        setCustomWebhookUrl(null);
-                        setShowUrlEditor(false);
-                      } catch {}
-                    }}
-                    activeOpacity={0.9}
-                  >
-                    <View className="px-3 py-1 rounded-full bg-white/20">
-                      <Text className="text-white text-xs">Quitar</Text>
-                    </View>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-              <Text className="text-white/40 text-[10px] mt-2">Consejo: En n8n, activa el workflow y usa /webhook/chat.</Text>
-            </View>
-          ) : null}
-        </View>
+        {/* Se eliminó la sección de debug/edición del webhook */}
       </View>
     </KeyboardAvoidingView>
   );

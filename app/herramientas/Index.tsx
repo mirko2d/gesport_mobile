@@ -21,8 +21,12 @@ export default function ToolsScreen() {
         <View className="px-6 py-6">
           <SectionTitle>RECURSOS</SectionTitle>
           <WeatherFormosa />
-          <PaceCalculator />
-          <BMICalculator />
+          <View className="mt-6">
+            <PaceCalculator />
+          </View>
+          <View className="mt-6">
+            <BMICalculator />
+          </View>
         </View>
       </ScrollView>
     </AppShell>

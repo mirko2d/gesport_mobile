@@ -39,8 +39,21 @@ function deriveBaseURL(): string {
 
 export const baseURL = deriveBaseURL();
 
+// Allow a separate base for the results microservice (optional)
+function deriveResultsBaseURL(): string {
+  const envUrl = process.env.EXPO_PUBLIC_RESULTS_BASE as string | undefined;
+  if (envUrl) return envUrl;
+  return baseURL; // default to same backend
+}
+export const resultsBaseURL = deriveResultsBaseURL();
+
 export const api = axios.create({
   baseURL,
+  headers: { "Content-Type": "application/json" },
+});
+
+export const resultsApi = axios.create({
+  baseURL: resultsBaseURL,
   headers: { "Content-Type": "application/json" },
 });
 
@@ -143,7 +156,31 @@ export const getEnrollmentPaymentStatus = async (enrollmentId: string) =>
   };
 
 // ====== Resultados ======
-export const myResults = async () => (await api.get("/results/mine")).data;
+export const myResults = async () => (await resultsApi.get("/results/mine")).data;
+
+// Resultados por evento (lista completa pública/para inscriptos)
+export const getEventResults = async (
+  event_id: string
+) => (await resultsApi.get(`/results/events/${event_id}`)).data as Array<{
+  position: number;
+  userId?: string;
+  nombre?: string;
+  apellido?: string;
+  dorsal?: string | number;
+  timeMs?: number;
+  finishedAt?: string;
+}>;
+
+// Marcar que un participante cruzó la meta (acción rápida tipo contador)
+// Se espera que el backend asigne correlativamente la posición o incremente conteo.
+export const incrementFinishCounter = async (
+  event_id: string,
+  payload?: { dorsal?: string | number; note?: string }
+) => (await resultsApi.post(`/results/events/${event_id}/finish`, payload || {})).data as {
+  ok: boolean;
+  count: number;
+  lastFinish?: { position: number; finishedAt: string; dorsal?: string | number };
+};
 
 // ====== Ediciones (opcional, si tu backend las expone) ======
 // Ajusta las rutas si tu API usa otros paths (por ejemplo: /past-editions)

@@ -167,8 +167,8 @@ export default function BMICalculator() {
         />
       </Animated.View>
 
-      <View className="flex-row gap-3 mt-4">
-        <View className="flex-1">
+      <View className="flex-row flex-wrap gap-3 mt-4">
+        <View className="flex-1" style={{ minWidth: 140 }}>
           <Text className="text-coffee font-semibold text-lg mb-2">Peso (kg)</Text>
           <View className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm">
             <TextInput
@@ -181,7 +181,7 @@ export default function BMICalculator() {
             />
           </View>
         </View>
-        <View className="flex-1">
+        <View className="flex-1" style={{ minWidth: 140 }}>
           <Text className="text-coffee font-semibold text-lg mb-2">Altura (cm)</Text>
           <View className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm">
             <TextInput

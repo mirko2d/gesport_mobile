@@ -523,8 +523,10 @@ export default function ProfileScreen() {
       animationType="fade"
       onRequestClose={() => setGoalsModalOpen(false)}
     >
-      <View className="flex-1 bg-black/60 items-center justify-center px-6">
-        <View className="bg-white rounded-2xl w-full p-5">
+      <View className="flex-1 bg-black/60 px-6">
+        <View style={{ flex: 1, justifyContent: 'center' }}>
+          <View className="bg-white rounded-2xl w-full max-h-[80%]">
+            <ScrollView className="w-full" contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <Text className="text-lg font-bold text-gray-900 mb-2">Editar objetivos</Text>
           <Text className="text-gray-700 mb-1">Kilómetros por mes</Text>
           <TextInput
@@ -569,6 +571,8 @@ export default function ProfileScreen() {
             >
               <Text className="text-white font-medium">Guardar</Text>
             </TouchableOpacity>
+          </View>
+            </ScrollView>
           </View>
         </View>
       </View>

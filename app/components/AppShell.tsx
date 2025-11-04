@@ -1,5 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { usePathname, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { ArrowLeft } from 'lucide-react-native';
 import React from 'react';
 import { BackHandler, KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -15,8 +16,6 @@ type Props = {
 };
 
 const FOOTER_HEIGHT = 72;
-const FOOTER_OFFSET = 12; // base lift above OS edge
-const FOOTER_EXTRA_LIFT = 4; // lowered closer to edge per feedback
 
 export default function AppShell({ title, showBack, right, children, hideFooter }: Props) {
   const router = useRouter();
@@ -24,9 +23,8 @@ export default function AppShell({ title, showBack, right, children, hideFooter 
   const isHome = !pathname || pathname === '/';
   const derivedShowBack = showBack !== undefined ? showBack : !isHome;
   const insets = useSafeAreaInsets();
-  const footerBottomOffset = hideFooter
-    ? 0
-    : Math.max(FOOTER_OFFSET + FOOTER_EXTRA_LIFT, (insets?.bottom || 0) + FOOTER_OFFSET + FOOTER_EXTRA_LIFT);
+  // Espacio inferior extra para mantener los iconos donde están pero llevar el fondo hasta abajo
+  const bottomSpacer = hideFooter ? 0 : 16; // equivalente al offset visual anterior
 
   const safeBack = React.useCallback(() => {
     try {
@@ -64,14 +62,15 @@ export default function AppShell({ title, showBack, right, children, hideFooter 
   }, [router]);
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-white" edges={['bottom']}>
+      <StatusBar style="light" backgroundColor="#000" />
       {/* Fondo sutil global (debajo de todo) */}
       <View style={[StyleSheet.absoluteFill, { zIndex: -1 }]} pointerEvents="none">
         <LinearGradient colors={["#FFFFFF", "#FFFFFF"]} style={StyleSheet.absoluteFill} />
       </View>
 
       {/* Simple black header with only app name (and optional back) */}
-      <View style={{ backgroundColor: '#000', paddingVertical: 16, paddingHorizontal: 16, marginTop: 4 }}>
+  <View style={{ backgroundColor: '#000', paddingTop: (insets?.top || 0) + 16, paddingBottom: 16, paddingHorizontal: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
             {derivedShowBack ? (
@@ -95,15 +94,15 @@ export default function AppShell({ title, showBack, right, children, hideFooter 
 
       {/* Contenido con padding inferior para footer fijo (ajustado por offset) y evitando cubrir por teclado */}
       <KeyboardAvoidingView
-        style={{ flex: 1, paddingBottom: hideFooter ? 0 : FOOTER_HEIGHT + footerBottomOffset }}
-        behavior={Platform.select({ ios: 'padding', android: undefined })}
-        keyboardVerticalOffset={0}
+        style={{ flex: 1, paddingBottom: hideFooter ? 0 : FOOTER_HEIGHT + bottomSpacer + (insets?.bottom || 0) }}
+        behavior={Platform.select({ ios: 'padding', android: 'height' })}
+        keyboardVerticalOffset={Platform.select({ ios: 0, android: 0 }) as number}
       >
         {children}
       </KeyboardAvoidingView>
       {!hideFooter && (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: footerBottomOffset }}>
-          <AppFooter />
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
+          <AppFooter extraBottomSpace={bottomSpacer} />
         </View>
       )}
     </SafeAreaView>

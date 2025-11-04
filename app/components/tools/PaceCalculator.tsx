@@ -89,8 +89,9 @@ export default function PaceCalculator() {
           style={{ height: 3, borderRadius: 9999, marginTop: 6, width: 160 }}
         />
       </Animated.View>
-      <View className="flex-row gap-3">
-        <View className="flex-1">
+      {/* Inputs en dos filas: distancia full-width y luego H/M/S que envuelven en pantallas chicas */}
+      <View>
+        <View style={{ marginTop: 8 }}>
           <Text className="text-coffee font-medium text-base mb-1">Distancia (km)</Text>
           <View className="bg-white rounded-lg px-3 py-2">
             <TextInput
@@ -103,55 +104,56 @@ export default function PaceCalculator() {
             />
           </View>
         </View>
-        <View className="flex-1">
-          <Text className="text-coffee font-medium text-base mb-1">Horas</Text>
-          <View className="bg-white rounded-lg px-3 py-2">
-            <TextInput
-              value={h}
-              onChangeText={setH}
-              keyboardType="numeric"
-              placeholder="0"
-              placeholderTextColor="#8E6E62"
-              className="text-coffee text-base"
-            />
+        <View className="flex-row flex-wrap gap-3 mt-3">
+          <View className="flex-1" style={{ minWidth: 110 }}>
+            <Text className="text-coffee font-medium text-base mb-1">Horas</Text>
+            <View className="bg-white rounded-lg px-3 py-2">
+              <TextInput
+                value={h}
+                onChangeText={setH}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor="#8E6E62"
+                className="text-coffee text-base"
+              />
+            </View>
           </View>
-        </View>
-        <View className="flex-1">
-          <Text className="text-coffee font-medium text-base mb-1">Min</Text>
-          <View className="bg-white rounded-lg px-3 py-2">
-            <TextInput
-              value={m}
-              onChangeText={setM}
-              keyboardType="numeric"
-              placeholder="50"
-              placeholderTextColor="#8E6E62"
-              className="text-coffee text-base"
-            />
+          <View className="flex-1" style={{ minWidth: 110 }}>
+            <Text className="text-coffee font-medium text-base mb-1">Min</Text>
+            <View className="bg-white rounded-lg px-3 py-2">
+              <TextInput
+                value={m}
+                onChangeText={setM}
+                keyboardType="numeric"
+                placeholder="50"
+                placeholderTextColor="#8E6E62"
+                className="text-coffee text-base"
+              />
+            </View>
           </View>
-        </View>
-        <View className="flex-1">
-          <Text className="text-coffee font-medium text-base mb-1">Seg</Text>
-          <View className="bg-white rounded-lg px-3 py-2">
-            <TextInput
-              value={s}
-              onChangeText={setS}
-              keyboardType="numeric"
-              placeholder="0"
-              placeholderTextColor="#8E6E62"
-              className="text-coffee text-base"
-            />
+          <View className="flex-1" style={{ minWidth: 110 }}>
+            <Text className="text-coffee font-medium text-base mb-1">Seg</Text>
+            <View className="bg-white rounded-lg px-3 py-2">
+              <TextInput
+                value={s}
+                onChangeText={setS}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor="#8E6E62"
+                className="text-coffee text-base"
+              />
+            </View>
           </View>
         </View>
       </View>
 
-      <Animated.View className="mt-4" style={resultStyle}>
-        <Text className="text-coffee text-lg leading-6">
-          Ritmo promedio:
-          <Text> </Text>
+      <Animated.View className="mt-5" style={resultStyle}>
+        <Text className="text-gray-900 text-base font-semibold">Ritmo promedio</Text>
+        <View className="mt-2">
           <Text className="font-extrabold text-3xl text-black bg-gray-200 px-3 py-1.5 rounded-full">
             {fmtPace(paceSecPerKm)}
           </Text>
-        </Text>
+        </View>
         <View className="mt-4">
           <Text className="text-coffee font-semibold text-lg">Estimados:</Text>
           <Text className="text-coffee mt-1 text-lg">5K: <Text className="font-extrabold text-xl text-[#2C1810]">{predict(5)}</Text></Text>
