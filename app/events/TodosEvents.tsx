@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Calendar, MapPin, Search, Users } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Image, Linking, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { baseURL, createEnrollmentPreference, enroll, getEnrollmentPaymentStatus, listEventParticipants, listEvents, myEnrollments, unenroll, updateMe } from '../../lib/api';
 import AppShell from '../components/AppShell';
@@ -89,6 +90,7 @@ function mapToUi(ev: ApiEvent): UiEvent {
 export default function AllEventsScreen() {
   const params = useLocalSearchParams();
   const yearParam = typeof params.year === 'string' ? parseInt(params.year, 10) : undefined;
+  const insets = useSafeAreaInsets();
   const [events, setEvents] = useState<UiEvent[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
   const [loading, setLoading] = useState<boolean>(false);
@@ -98,7 +100,8 @@ export default function AllEventsScreen() {
   const [selectedEvent, setSelectedEvent] = useState<UiEvent | null>(null);
   const [participantsModalOpen, setParticipantsModalOpen] = useState<boolean>(false);
   const [participantsLoading, setParticipantsLoading] = useState<boolean>(false);
-  const [participants, setParticipants] = useState<Array<{ _id: string; nombre?: string; apellido?: string; email?: string; avatarUrl?: string }>>([]);
+  const [participants, setParticipants] = useState<Array<{ enrollmentId?: string; _id: string; nombre?: string; apellido?: string; email?: string; avatarUrl?: string; createdAt?: string; form?: any }>>([]);
+  const [expandedParticipantId, setExpandedParticipantId] = useState<string | null>(null);
   const [showTerms, setShowTerms] = useState<boolean>(false);
   const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
   const [acceptedWaiver, setAcceptedWaiver] = useState<boolean>(false);
@@ -411,7 +414,7 @@ export default function AllEventsScreen() {
       {/* Lista de eventos */}
       <ScrollView
         className="flex-1 px-4"
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: 72 + 16 + (insets?.bottom || 0) + 24 }}
       >
         {loading ? (
           <View className="flex-1 items-center justify-center py-12">
@@ -465,8 +468,8 @@ export default function AllEventsScreen() {
                   </Text>
                 </View>
 
-                <View className="flex-row justify-between items-center">
-                  <View className="flex-row gap-2">
+                <View className="gap-3">
+                  <View className="flex-row flex-wrap gap-2 items-center">
                     <View className="bg-primary px-3 py-1 rounded-full">
                       <Text className="text-white font-medium text-sm">
                         {event.category}
@@ -488,11 +491,10 @@ export default function AllEventsScreen() {
                     )}
                   </View>
 
-                  <View className="flex-row gap-2">
+                  <View className="flex-row flex-wrap gap-2">
                     {isPrivileged ? (
                       <Button title="Inscriptos" variant="outline" onPress={() => openParticipants(event)} />
                     ) : null}
-                    {/* Acceso rápido a resultados y contador */}
                     <Button
                       title="Resultados"
                       variant="outline"
@@ -552,12 +554,12 @@ export default function AllEventsScreen() {
       <View className="flex-1 bg-black/60 px-6">
         {/* Empuja el contenido cuando aparece el teclado y permite scroll */}
         <View style={{ flex: 1, justifyContent: 'center' }}>
-          <View className="bg-white rounded-2xl w-full max-h-[85%]">
+          <View className="bg-white rounded-2xl w-full max-h-[90%]">
             <ScrollView
               className="w-full"
-              contentContainerStyle={{ padding: 20, paddingBottom: 24 }}
+              contentContainerStyle={{ padding: 20, paddingBottom: 180 }}
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
+              showsVerticalScrollIndicator
             >
           <Text className="text-lg font-bold text-gray-900 mb-1">Inscribirme</Text>
           <Text className="text-gray-600 mb-4">
@@ -641,7 +643,7 @@ export default function AllEventsScreen() {
               <Text className="text-gray-800 mb-1">Medicamentos</Text>
               <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-4" placeholder="Medicamentos" value={meds} onChangeText={setMeds} />
 
-              <View className="flex-row justify-end gap-2">
+              <View className="flex-row justify-end gap-2 flex-wrap">
                 <TouchableOpacity
                   className="px-4 py-2 rounded-lg bg-gray-100"
                   onPress={() => setEnrollModalOpen(false)}
@@ -649,24 +651,23 @@ export default function AllEventsScreen() {
                 >
                   <Text className="text-gray-800">Cancelar</Text>
                 </TouchableOpacity>
-                <View className="flex-row items-center mr-3 mt-1">
+                <View className="flex-row items-center gap-3 mr-3 mt-1 flex-wrap">
                   <TouchableOpacity
                     onPress={() => setAcceptedTerms((v) => !v)}
                     accessibilityLabel={acceptedTerms ? 'Casilla aceptada' : 'Casilla no aceptada'}
-                    className={`w-5 h-5 rounded-sm border ${acceptedTerms ? 'bg-primary border-primary' : 'border-gray-300'} mr-3 items-center justify-center`}
+                    className={`w-5 h-5 rounded-sm border ${acceptedTerms ? 'bg-primary border-primary' : 'border-gray-300'} items-center justify-center`}
                   >
                     {acceptedTerms ? <Text className="text-white font-bold">✓</Text> : null}
                   </TouchableOpacity>
-
-                  <View className="flex-row items-center">
-                    <Text className="text-gray-800 mr-2">Acepto los</Text>
-                    <TouchableOpacity onPress={() => setShowTerms(true)}>
-                      <Text className="text-gray-800 underline">términos y condiciones</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setShowTerms(true)} className="ml-3">
-                      <Text className="text-sm text-gray-600 underline">Ver términos y condiciones</Text>
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity onPress={() => setAcceptedTerms((v) => !v)}>
+                    <Text className="text-gray-800">Acepto los términos y condiciones</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setShowTerms(true)}
+                    className="px-3 py-2 rounded-lg border border-gray-300"
+                  >
+                    <Text className="text-gray-800">Ver términos</Text>
+                  </TouchableOpacity>
                 </View>
                 <View className="flex-row items-center mr-3 mb-3">
                   <TouchableOpacity
@@ -780,20 +781,62 @@ export default function AllEventsScreen() {
             <Text className="text-gray-700">No hay inscriptos por ahora.</Text>
           ) : (
             <ScrollView className="max-h-[60%]">
-              {participants.map((p) => (
-                <View key={p._id} className="flex-row items-center py-2 border-b border-gray-100">
-                  <View className="w-9 h-9 rounded-full bg-gray-200 items-center justify-center mr-3">
-                    <Text className="text-gray-700 font-semibold">
-                      {(p.nombre?.[0] || '').toUpperCase()}
-                      {(p.apellido?.[0] || '').toUpperCase()}
-                    </Text>
+              {participants.map((p) => {
+                const fullName = [p.nombre, p.apellido].filter(Boolean).join(' ') || 'Usuario';
+                const rowId = `${p._id}-${p.enrollmentId || ''}`;
+                const isExpanded = expandedParticipantId === rowId;
+                return (
+                  <View key={rowId} className="py-2 border-b border-gray-100">
+                    <View className="flex-row items-center justify-between">
+                      <View className="flex-row items-center">
+                        <View className="w-9 h-9 rounded-full bg-gray-200 items-center justify-center mr-3">
+                          <Text className="text-gray-700 font-semibold">
+                            {(p.nombre?.[0] || '').toUpperCase()}
+                            {(p.apellido?.[0] || '').toUpperCase()}
+                          </Text>
+                        </View>
+                        <View>
+                          <Text className="text-gray-900 font-medium">{fullName}</Text>
+                          {p.email ? <Text className="text-gray-600 text-xs">{p.email}</Text> : null}
+                        </View>
+                      </View>
+                      {user?.role === 'superadmin' ? (
+                        <TouchableOpacity
+                          onPress={() => setExpandedParticipantId(isExpanded ? null : rowId)}
+                          className="px-3 py-2 rounded-lg border border-gray-300"
+                        >
+                          <Text className="text-gray-800">{isExpanded ? 'Ocultar' : 'Ver ficha'}</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                    {isExpanded ? (
+                      <Card className="mt-3 border border-gray-200">
+                        {p.createdAt ? (
+                          <Text className="text-gray-700 mb-1">Inscripto: {new Date(p.createdAt).toLocaleString()}</Text>
+                        ) : null}
+                        <Text className="text-gray-900 font-semibold mt-1">Datos</Text>
+                        <Text className="text-gray-700">DNI: {p.form?.dni ?? '-'}</Text>
+                        <Text className="text-gray-700">Fecha de nacimiento: {p.form?.fechaNacimiento ? new Date(p.form.fechaNacimiento).toLocaleDateString() : '-'}</Text>
+                        <Text className="text-gray-700">Género: {p.form?.genero ?? '-'}</Text>
+                        <Text className="text-gray-700">Talla de remera: {p.form?.tallaRemera ?? '-'}</Text>
+                        <Text className="text-gray-700">Club: {p.form?.club ?? '-'}</Text>
+                        <Text className="text-gray-700">Ciudad: {p.form?.ciudad ?? '-'}</Text>
+                        <Text className="text-gray-700">País: {p.form?.pais ?? '-'}</Text>
+
+                        <Text className="text-gray-900 font-semibold mt-2">Emergencia</Text>
+                        <Text className="text-gray-700">Nombre: {p.form?.emergencia?.nombre ?? '-'}</Text>
+                        <Text className="text-gray-700">Teléfono: {p.form?.emergencia?.telefono ?? '-'}</Text>
+                        <Text className="text-gray-700">Relación: {p.form?.emergencia?.relacion ?? '-'}</Text>
+
+                        <Text className="text-gray-900 font-semibold mt-2">Salud</Text>
+                        <Text className="text-gray-700">Alergias: {p.form?.salud?.alergias ?? '-'}</Text>
+                        <Text className="text-gray-700">Condiciones: {p.form?.salud?.condiciones ?? '-'}</Text>
+                        <Text className="text-gray-700">Medicamentos: {p.form?.salud?.medicamentos ?? '-'}</Text>
+                      </Card>
+                    ) : null}
                   </View>
-                  <View>
-                    <Text className="text-gray-900 font-medium">{[p.nombre, p.apellido].filter(Boolean).join(' ') || 'Usuario'}</Text>
-                    {p.email ? <Text className="text-gray-600 text-xs">{p.email}</Text> : null}
-                  </View>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
           )}
           <View className="flex-row justify-end mt-4">

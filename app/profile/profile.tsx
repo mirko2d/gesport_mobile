@@ -9,7 +9,7 @@ import Card from '../components/ui/Card';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
-import { me, myEnrollments, myResults, uploadAvatar } from '../../lib/api';
+import { me, myEnrollments, myResults, updateMe, uploadAvatar } from '../../lib/api';
 
 type UserDoc = {
   _id: string;
@@ -41,10 +41,11 @@ type EnrollmentDoc = {
 
 type ResultDoc = {
   _id?: string;
-  usuario_id: string;
-  evento_id: string;
-  tiempo?: string;
-  posicion?: number;
+  position?: number;
+  timeMs?: number;
+  finishedAt?: string;
+  dorsal?: string | number;
+  event?: { _id: string; nombre?: string; titulo?: string; fecha?: string };
 };
 
 export default function ProfileScreen() {
@@ -205,6 +206,11 @@ export default function ProfileScreen() {
       const asset = result.assets?.[0];
       if (!asset?.uri) return;
       const { url } = await uploadAvatar(asset.uri);
+      // Persistir en backend para reflejarse en todos los dispositivos/sesiones
+      try {
+        await updateMe({ avatarUrl: url });
+        await refreshMe().catch(() => {});
+      } catch {}
       const avatarKey = authUser?._id ? `@gesport:profile:avatarUrl:${authUser._id}` : '@gesport:profile:avatarUrl';
       await AsyncStorage.setItem(avatarKey, url);
       setProfile((prev) => (prev ? { ...prev, avatarUrl: url } : prev));
@@ -258,7 +264,7 @@ export default function ProfileScreen() {
           </View>
         </View>
       ) : (
-        <ScrollView className="flex-1">
+  <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {/* Header estilo Adidas Running */}
           <View style={{ backgroundColor: '#E6EFF1' }}>
             <View style={{ height: 140, paddingHorizontal: 16, paddingTop: 24 }}>
@@ -290,8 +296,9 @@ export default function ProfileScreen() {
               <TouchableOpacity onPress={handleChangeAvatar} className="mt-3">
                 <Text className="text-black font-extrabold">CAMBIAR FOTO DE PERFIL</Text>
               </TouchableOpacity>
-              <TouchableOpacity className="mt-4 bg-black rounded-lg px-4 py-3 items-center flex-row justify-center">
-                <Text className="text-white font-extrabold tracking-wider">VER PERFIL COMPLETO</Text>
+              {/* Acceso a edición de perfil */}
+              <TouchableOpacity onPress={() => router.push('/profile/EditProfile')} className="mt-4 bg-black rounded-lg px-4 py-3 items-center flex-row justify-center">
+                <Text className="text-white font-extrabold tracking-wider">EDITAR PERFIL</Text>
                 <Text className="text-white ml-2">→</Text>
               </TouchableOpacity>
             </View>
@@ -472,10 +479,24 @@ export default function ProfileScreen() {
                 <Card key={idx} className="mt-3 border border-gray-100">
                   <View className="flex-row items-center">
                     <Trophy color="#2C1810" size={18} />
-                    <Text className="text-gray-800 ml-2">Evento: {r.evento_id}</Text>
+                    <Text className="text-gray-800 ml-2">
+                      Evento: {(() => {
+                        const ev: any = r.event || {};
+                        return ev.titulo || ev.nombre || ev._id || 'Evento';
+                      })()}
+                    </Text>
                   </View>
-                  <Text className="text-gray-700 mt-1">Tiempo: {r.tiempo ?? '-'}</Text>
-                  <Text className="text-gray-700 mt-1">Posición: {r.posicion ?? '-'}</Text>
+                  {r.timeMs != null ? (
+                    <Text className="text-gray-700 mt-1">Tiempo: {(() => {
+                      const total = Math.max(0, Math.floor((r.timeMs || 0) / 1000));
+                      const h = Math.floor(total / 3600);
+                      const m = Math.floor((total % 3600) / 60);
+                      const s = total % 60;
+                      const pad = (n: number) => String(n).padStart(2, '0');
+                      return `${pad(h)}:${pad(m)}:${pad(s)}`;
+                    })()}</Text>
+                  ) : null}
+                  <Text className="text-gray-700 mt-1">Posición: {r.position ?? '-'}</Text>
                 </Card>
               ))
             )}
@@ -511,7 +532,7 @@ export default function ProfileScreen() {
           {/* Secciones de calzado eliminadas */}
 
           {/* Sin herramientas: removidas según pedido */}
-          <View style={{ height: 16 }} />
+          <View style={{ height: 120 }} />
         </ScrollView>
       )}
       </View>

@@ -13,6 +13,7 @@ import {
 import { cssInterop } from 'nativewind';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Easing, FlatList, Image, ImageSourcePropType, Linking, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { listEvents, listNews, updateMe } from '../lib/api';
 import { PAST_EDITIONS } from '../lib/editions';
@@ -343,6 +344,7 @@ export default function HomeScreen() {
   const { isAuth, user } = useAuth();
   const params = useLocalSearchParams<{ section?: string; from?: string }>();
   const scrollRef = useRef<ScrollView>(null);
+  const insets = useSafeAreaInsets();
   // const [pendingScroll, setPendingScroll] = useState(false);
   // const contactPos = useRef<number | null>(null);
   const [scrollY, setScrollY] = useState(0);
@@ -508,6 +510,7 @@ export default function HomeScreen() {
         onScroll={(e) => setScrollY(e.nativeEvent.contentOffset.y)}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: (72 + 16 + (insets?.bottom || 0) + 24) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Hero */}
@@ -543,7 +546,7 @@ export default function HomeScreen() {
               </View>
               <View style={{ flexGrow: 1, flexBasis: '48%', minWidth: 150 }}>
                 <Link href="/events/TodosEvents" asChild>
-                  <Button title="Ver eventos" variant="primary" />
+                  <Button title="Ver eventos" variant="secondary" />
                 </Link>
               </View>
               <View style={{ flexGrow: 1, flexBasis: '48%', minWidth: 150 }}>
@@ -594,7 +597,7 @@ export default function HomeScreen() {
             <View className="flex-row justify-between">
               <Button
                 title="INSCRIBIRSE"
-                variant="primary"
+                variant="secondary"
                 onPress={() => {
                   if (nextEvent?._id) {
                     router.push({ pathname: '/events/[id]', params: { id: String(nextEvent._id) } });

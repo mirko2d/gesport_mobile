@@ -76,7 +76,12 @@ export default function UsersAdmin() {
           <Text className="text-coffee mt-3">Cargando...</Text>
         </View>
       ) : (
-        <ScrollView className="flex-1 px-4 py-4">
+        <ScrollView
+          className="flex-1 px-4 py-4"
+          contentContainerStyle={{ paddingBottom: 140 }}
+          showsVerticalScrollIndicator
+          keyboardShouldPersistTaps="handled"
+        >
           {rows.map((u) => (
             <Card key={u._id} className="mb-3">
               <View className="flex-row justify-between items-center">

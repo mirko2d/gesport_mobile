@@ -148,14 +148,16 @@ export default function ActivityScreenWeb() {
             </View>
           </View>
           <View className="flex-row flex-wrap justify-center mt-5" style={{ rowGap: 10, columnGap: 10 }}>
+            {/* Iniciar */}
             <TouchableOpacity
               onPress={start}
               disabled={controlsLocked}
               className={`${controlsLocked ? 'bg-gray-300' : 'bg-black'} px-5 py-3 rounded-full items-center`}
               style={{ minWidth: 140, flexGrow: 1, flexBasis: '45%' }}
             >
-              <Text className="text-white font-semibold">Iniciar</Text>
+              <Text className={`${controlsLocked ? 'text-gray-500' : 'text-white'} font-semibold`}>Iniciar</Text>
             </TouchableOpacity>
+            {/* Pausar/Reanudar */}
             <TouchableOpacity
               onPress={() => {
                 if (running) return pause();
@@ -165,26 +167,29 @@ export default function ActivityScreenWeb() {
                 }
                 start();
               }}
-              className="bg-gray-800 px-5 py-3 rounded-full items-center"
+              disabled={false}
+              className={`bg-black px-5 py-3 rounded-full items-center`}
               style={{ minWidth: 140, flexGrow: 1, flexBasis: '45%' }}
             >
-              <Text className="text-white font-semibold">{running ? 'Pausar' : 'Reanudar'}</Text>
+              <Text className={`text-white font-semibold`}>{running ? 'Pausar' : 'Reanudar'}</Text>
             </TouchableOpacity>
+            {/* Reiniciar */}
             <TouchableOpacity
               onPress={reset}
               disabled={controlsLocked}
-              className={`${controlsLocked ? 'bg-gray-300' : 'bg-gray-200'} px-5 py-3 rounded-full items-center`}
+              className={`${controlsLocked ? 'bg-gray-300' : 'bg-black'} px-5 py-3 rounded-full items-center`}
               style={{ minWidth: 140, flexGrow: 1, flexBasis: '45%' }}
             >
-              <Text className="text-gray-800 font-semibold">Reiniciar</Text>
+              <Text className={`${controlsLocked ? 'text-gray-500' : 'text-white'} font-semibold`}>Reiniciar</Text>
             </TouchableOpacity>
+            {/* Guardar */}
             <TouchableOpacity
               onPress={saveRun}
               disabled={saving || controlsLocked}
-              className={`${saving || controlsLocked ? 'bg-gray-300' : 'bg-green-600'} px-5 py-3 rounded-full items-center`}
+              className={`${saving || controlsLocked ? 'bg-gray-300' : 'bg-black'} px-5 py-3 rounded-full items-center`}
               style={{ minWidth: 140, flexGrow: 1, flexBasis: '45%' }}
             >
-              <Text className="text-white font-semibold">Guardar</Text>
+              <Text className={`${saving || controlsLocked ? 'text-gray-500' : 'text-white'} font-semibold`}>Guardar</Text>
             </TouchableOpacity>
           </View>
         </View>

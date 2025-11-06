@@ -64,13 +64,24 @@ export const setToken = (token: string | null) => {
   authToken = token;
   if (token) {
     api.defaults.headers.common.Authorization = `Bearer ${token}`;
+    resultsApi.defaults.headers.common.Authorization = `Bearer ${token}`;
   } else {
     delete api.defaults.headers.common.Authorization;
+    delete resultsApi.defaults.headers.common.Authorization;
   }
 };
 
 // Interceptor (por si cambian headers entre screens)
 api.interceptors.request.use((cfg) => {
+  if (authToken && !cfg.headers?.Authorization) {
+    cfg.headers = cfg.headers || {};
+    cfg.headers.Authorization = `Bearer ${authToken}`;
+  }
+  return cfg;
+});
+
+// Ensure Authorization header is present on resultsApi as well
+resultsApi.interceptors.request.use((cfg) => {
   if (authToken && !cfg.headers?.Authorization) {
     cfg.headers = cfg.headers || {};
     cfg.headers.Authorization = `Bearer ${authToken}`;
@@ -137,7 +148,31 @@ export const myEnrollments = async () =>
   (await api.get("/enrollments/mine")).data;
 
 export const listEventParticipants = async (event_id: string) =>
-  (await api.get(`/enrollments/event/${event_id}`)).data as { count: number; participants: Array<{ _id: string; nombre?: string; apellido?: string; email?: string; avatarUrl?: string }> };
+  (await api.get(`/enrollments/event/${event_id}`)).data as {
+    count: number;
+    participants: Array<{
+      enrollmentId?: string;
+      _id: string;
+      nombre?: string;
+      apellido?: string;
+      email?: string;
+      avatarUrl?: string;
+      createdAt?: string;
+      form?: {
+        dni?: string;
+        fechaNacimiento?: string;
+        genero?: 'F' | 'M' | 'X' | 'Otro' | string;
+        tallaRemera?: 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL' | string;
+        emergencia?: { nombre?: string; telefono?: string; relacion?: string };
+        salud?: { alergias?: string; condiciones?: string; medicamentos?: string };
+        club?: string;
+        ciudad?: string;
+        pais?: string;
+        aceptoTerminos?: boolean;
+        aceptoDescargo?: boolean;
+      };
+    }>;
+  };
 
 // ====== Pagos ======
 export const createEnrollmentPreference = async (enrollmentId: string) =>
@@ -175,7 +210,7 @@ export const getEventResults = async (
 // Se espera que el backend asigne correlativamente la posición o incremente conteo.
 export const incrementFinishCounter = async (
   event_id: string,
-  payload?: { dorsal?: string | number; note?: string }
+  payload?: { dorsal?: string | number; note?: string; userId?: string; timeMs?: number }
 ) => (await resultsApi.post(`/results/events/${event_id}/finish`, payload || {})).data as {
   ok: boolean;
   count: number;

@@ -39,7 +39,11 @@ export default function AdminProfile() {
 
   return (
     <AppShell title={isSuper ? 'Panel Superadmin' : 'Panel Admin'}>
-      <ScrollView className="flex-1 bg-white px-6 py-6">
+      <ScrollView
+        className="flex-1 bg-white px-6 py-6"
+        contentContainerStyle={{ paddingBottom: 140 }}
+        showsVerticalScrollIndicator
+      >
         <Text className="text-black text-2xl font-extrabold mb-3">
           {isSuper ? 'Control total del sitio' : 'Acceso restringido'}
         </Text>
@@ -69,6 +73,12 @@ export default function AdminProfile() {
                 className="bg-black rounded-xl px-4 py-3 items-center"
               >
                 <Text className="text-white font-semibold">Administrar usuarios</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push('/events/TodosEvents')}
+                className="bg-gray-900 rounded-xl px-4 py-3 items-center"
+              >
+                <Text className="text-white font-semibold">Ver eventos (público)</Text>
               </TouchableOpacity>
             </View>
           </Card>

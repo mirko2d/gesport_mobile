@@ -114,11 +114,28 @@ router.get('/event/:id', authRequired, requireRole(['admin', 'superadmin']), asy
       .sort({ createdAt: -1 })
       .lean();
     const participants = list.map((enr) => ({
+      enrollmentId: enr._id,
       _id: enr.user?._id,
       nombre: enr.user?.nombre,
       apellido: enr.user?.apellido,
       email: enr.user?.email,
       avatarUrl: enr.user?.avatarUrl,
+      form: enr.form
+        ? {
+            dni: enr.form.dni,
+            fechaNacimiento: enr.form.fechaNacimiento,
+            genero: enr.form.genero,
+            tallaRemera: enr.form.tallaRemera,
+            emergencia: enr.form.emergencia || {},
+            salud: enr.form.salud || {},
+            club: enr.form.club,
+            ciudad: enr.form.ciudad,
+            pais: enr.form.pais,
+            aceptoTerminos: enr.form.aceptoTerminos === true,
+            aceptoDescargo: enr.form.aceptoDescargo === true,
+          }
+        : undefined,
+      createdAt: enr.createdAt,
     }));
     res.json({ count: participants.length, participants });
   } catch (e) {

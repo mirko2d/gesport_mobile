@@ -40,7 +40,9 @@ export default function Button({ title, variant = 'primary', loading, className,
 
   return (
     <TouchableOpacity className={containerClass} disabled={disabled} {...rest}>
-      <Text className={textClass}>{loading ? '...' : title}</Text>
+      <Text className={textClass} numberOfLines={1} ellipsizeMode="tail">
+        {loading ? '...' : title}
+      </Text>
     </TouchableOpacity>
   );
 }

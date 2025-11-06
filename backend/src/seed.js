@@ -104,30 +104,8 @@ async function seed() {
     activo: true,
   });
 
-  await ensureEvent({
-    titulo: 'Nocturna 10K Costanera',
-    descripcion: 'Carrera nocturna por la Costanera con iluminación LED y música.',
-    fecha: in12,
-    lugar: 'Costanera de Formosa',
-    categoria: 'CARRERA',
-    afiche: runningImgs[1],
-    cupos: 800,
-    precio: 0,
-    activo: true,
-  });
-
-  await ensureEvent({
-    titulo: 'Entrenamiento en la Costanera',
-    descripcion: 'Fartlek ligero y técnica de carrera junto al río.',
-    fecha: in25,
-    lugar: 'Costanera de Formosa',
-    categoria: 'ENTRENAMIENTO',
-    afiche: runningImgs[2],
-    cupos: 120,
-    precio: 0,
-    activo: true,
-  });
-  console.log('Eventos de la Costanera listos');
+  // Opcional: no crear eventos extra (solo maratón)
+  console.log('Evento principal de la Costanera listo');
 
   // Editions
   if ((await Edition.countDocuments()) === 0) {
@@ -182,13 +160,21 @@ async function seed() {
   if (process.env.SEED_UPDATE_IMAGES === '1') {
     const updates = [
       { titulo: 'Maratón Costanera de Formosa 2025', afiche: runningImgs[0] },
-      { titulo: 'Nocturna 10K Costanera', afiche: runningImgs[1] },
-      { titulo: 'Entrenamiento en la Costanera', afiche: runningImgs[2] },
     ];
     for (const u of updates) {
       await Event.findOneAndUpdate({ titulo: u.titulo }, { $set: { afiche: u.afiche } });
     }
     console.log('Actualizadas imágenes de eventos (SEED_UPDATE_IMAGES=1)');
+  }
+
+  // Limpieza: eliminar eventos extra creados previamente (entrenamientos u otros de demo)
+  const toRemoveTitles = [
+    'Nocturna 10K Costanera',
+    'Entrenamiento en la Costanera',
+  ];
+  const removed = await Event.deleteMany({ titulo: { $in: toRemoveTitles } });
+  if (removed?.deletedCount) {
+    console.log(`Eventos de demo eliminados: ${removed.deletedCount}`);
   }
 
   // Opcional: actualizar imágenes de ediciones existentes si SEED_UPDATE_EDITION_IMAGES=1

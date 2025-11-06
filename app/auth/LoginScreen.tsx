@@ -11,7 +11,8 @@ type FormData = {
   email: string;
   password: string;
   confirmPassword: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   phone: string;
   address: string;
   avatarUrl?: string;
@@ -30,7 +31,8 @@ export default function LoginScreen() {
     email: '',
     password: '',
     confirmPassword: '',
-    fullName: '',
+    firstName: '',
+    lastName: '',
     phone: '',
     address: '',
     avatarUrl: '',
@@ -84,10 +86,10 @@ export default function LoginScreen() {
   };
 
   const handleRegister = async () => {
-    const { email, password, confirmPassword, fullName, phone, address, avatarUrl } = formData;
+    const { email, password, confirmPassword, firstName, lastName, phone, address, avatarUrl } = formData;
 
     const emailNorm = normalizeEmail(email);
-    if (!emailNorm || !password || !confirmPassword || !fullName || !phone || !address) {
+    if (!emailNorm || !password || !confirmPassword || !firstName || !lastName || !phone || !address) {
       return Alert.alert('Error', 'Por favor complete todos los campos');
     }
     if (password !== confirmPassword) return Alert.alert('Error', 'Las contraseñas no coinciden');
@@ -96,9 +98,8 @@ export default function LoginScreen() {
       return Alert.alert('Contraseña insegura', 'Debe tener al menos 8 caracteres e incluir mayúscula, minúscula, número y símbolo.');
     }
 
-    const parts = fullName.trim().split(/\s+/);
-    const nombre = parts.shift() ?? '';
-    const apellido = parts.join(' ') || '-';
+    const nombre = firstName.trim();
+    const apellido = lastName.trim();
 
     try {
       setSubmitting(true);
@@ -215,16 +216,28 @@ export default function LoginScreen() {
 
           <View className="gap-4">
             {!isLogin && (
-              <View className="flex-row items-center bg-white rounded-xl p-4 border border-gray-200">
-                <User size={20} color="#000000" />
-                <TextInput
-                  className="flex-1 ml-3 text-base"
-                  placeholder="Nombre completo"
-                  value={formData.fullName}
-                  onChangeText={v => handleInputChange('fullName', v)}
-                  placeholderTextColor="#9CA3AF"
-                />
-              </View>
+              <>
+                <View className="flex-row items-center bg-white rounded-xl p-4 border border-gray-200">
+                  <User size={20} color="#000000" />
+                  <TextInput
+                    className="flex-1 ml-3 text-base"
+                    placeholder="Nombre"
+                    value={formData.firstName}
+                    onChangeText={v => handleInputChange('firstName', v)}
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+                <View className="flex-row items-center bg-white rounded-xl p-4 border border-gray-200">
+                  <User size={20} color="#000000" />
+                  <TextInput
+                    className="flex-1 ml-3 text-base"
+                    placeholder="Apellido"
+                    value={formData.lastName}
+                    onChangeText={v => handleInputChange('lastName', v)}
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+              </>
             )}
 
             <View className="flex-row items-center bg-white rounded-xl p-4 border border-gray-200">

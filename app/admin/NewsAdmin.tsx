@@ -98,7 +98,12 @@ export default function NewsAdmin() {
           <Text className="mt-3">Cargando...</Text>
         </View>
       ) : (
-        <ScrollView className="flex-1 px-4 py-4">
+        <ScrollView
+          className="flex-1 px-4 py-4"
+          contentContainerStyle={{ paddingBottom: 140 }}
+          showsVerticalScrollIndicator
+          keyboardShouldPersistTaps="handled"
+        >
           <Card className="mb-4">
             <Text className="text-black text-lg font-extrabold">Crear noticia</Text>
             <View className="mt-3">

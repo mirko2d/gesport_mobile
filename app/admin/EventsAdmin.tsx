@@ -188,7 +188,12 @@ export default function EventsAdmin() {
           <Text className="mt-3">Cargando...</Text>
         </View>
       ) : (
-        <ScrollView className="flex-1 px-4 py-4">
+        <ScrollView
+          className="flex-1 px-4 py-4"
+          contentContainerStyle={{ paddingBottom: 140 }}
+          showsVerticalScrollIndicator
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Formulario crear evento */}
           <Card className="mb-4 rounded-lg">
             <Text className="text-black text-lg font-extrabold">Crear evento</Text>
