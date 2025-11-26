@@ -132,6 +132,10 @@ export const deleteEvent = async (id: string) =>
 export const updateEvent = async (id: string, payload: any) =>
   (await api.patch(`/events/${id}`, payload)).data;
 
+// Finalize an event (admin/superadmin)
+export const finalizeEvent = async (id: string) =>
+  (await api.patch(`/events/${id}/finalize`, {})).data as { ok: boolean; event: any };
+
 // ====== Inscripciones ======
 // El back maneja campos estilo DB: usuario_id / evento_id
 export const enroll = async (event_id: string, form?: any) =>

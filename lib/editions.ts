@@ -1,15 +1,25 @@
 // Centraliza aquí las ediciones anteriores para mantenerlas en un solo lugar
 // Puedes usar URLs o require() desde assets/images
 
+export type RaceResult = {
+  position: number;
+  name: string;
+  time: string;
+  dorsal?: number;
+};
+
 export type RaceItem = {
-  id: string; // ej: '5k', '10k'
-  name: string; // nombre visible, ej: '5K Recreativa'
+  id: string;
+  name: string;
   distanceKm: number;
   participants?: number;
+  totalParticipants?: number;
+  image?: any;
+  recordTime?: string;
+  recordHolder?: string;
+  results?: RaceResult[];
   winnerMale?: { name: string; time: string };
   winnerFemale?: { name: string; time: string };
-  image?: any; // opcional: portada específica de la carrera
-  results?: Array<{ position: number; name: string; time: string }>; // top 10
 };
 
 export type EditionItem = {

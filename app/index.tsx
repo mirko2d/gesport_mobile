@@ -324,7 +324,7 @@ function EditionCard({ id, year, color, image, description }: { id: string; year
             {description}
           </Text>
           <View className="mt-1">
-            <Link href="/ediciones/Index" asChild>
+            <Link href={{ pathname: '/ediciones/[id]', params: { id } }} asChild>
               <TouchableOpacity className="flex-row items-center">
                 <Text className="text-primary text-lg font-semibold">Ver todas las ediciones</Text>
                 <ChevronDown color="#000000" size={22} className="rotate-[-90deg] ml-1" />
@@ -447,7 +447,11 @@ export default function HomeScreen() {
   // Derivados: futuros y pasados
   const upcomingEvents = React.useMemo(() => {
     const now = Date.now();
-    return (events || []).filter((e) => {
+    return (events || [])
+      // Excluir categoría ENTRENAMIENTO y eventos inactivos si el backend aún no filtra
+      .filter((e: any) => (e?.categoria || '').toUpperCase() !== 'ENTRENAMIENTO')
+      .filter((e: any) => e?.activo !== false)
+      .filter((e) => {
       if (!e.fecha) return true; // sin fecha: mantener en próximos
       const ts = new Date(e.fecha).getTime();
       return !isNaN(ts) && ts >= now;
@@ -456,7 +460,10 @@ export default function HomeScreen() {
 
   const pastEvents = React.useMemo(() => {
     const now = Date.now();
-    return (events || []).filter((e) => {
+    return (events || [])
+      .filter((e: any) => (e?.categoria || '').toUpperCase() !== 'ENTRENAMIENTO')
+      .filter((e: any) => e?.activo !== false)
+      .filter((e) => {
       if (!e.fecha) return false; // sin fecha no lo consideramos pasado
       const ts = new Date(e.fecha).getTime();
       return !isNaN(ts) && ts < now;
@@ -599,11 +606,7 @@ export default function HomeScreen() {
                 title="INSCRIBIRSE"
                 variant="secondary"
                 onPress={() => {
-                  if (nextEvent?._id) {
-                    router.push({ pathname: '/events/[id]', params: { id: String(nextEvent._id) } });
-                  } else {
-                    router.push('/events/TodosEvents');
-                  }
+                  router.push('/events/TodosEvents');
                 }}
               />
               <Link href="/calendario/Calendar" asChild>
@@ -611,6 +614,13 @@ export default function HomeScreen() {
               </Link>
             </View>
           </RevealOnScroll>
+          {/* Acceso directo a Términos y Condiciones desde Home */}
+          <RevealOnScroll scrollY={scrollY} viewportHeight={viewportHeight} delay={160} direction="up">
+            <View className="mt-4 flex-row justify-center">
+              <Button title="Ver términos y condiciones" variant="secondary" onPress={() => setTermsOpen(true)} />
+            </View>
+          </RevealOnScroll>
+          {/* Indicador de API eliminado para producción */}
         </LinearGradient>
 
         {/* Noticias - ahora arriba de Eventos */}
@@ -691,7 +701,7 @@ export default function HomeScreen() {
             ) : (
               upcomingEvents.slice(0, 3).map((ev, idx) => (
                 <RevealOnScroll key={ev._id} scrollY={scrollY} viewportHeight={viewportHeight} delay={idx * 80} baseY={eventosBaseY.current} direction={idx % 2 === 0 ? 'left' : 'right'}>
-                  <Link href={{ pathname: '/events/[id]', params: { id: ev._id } }} asChild>
+                  <Link href="/events/TodosEvents" asChild>
                     <TouchableOpacity className="bg-black rounded-2xl p-5 mb-4 relative overflow-hidden shadow-lg hover:opacity-95" activeOpacity={0.9}>
                       <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
                       <Text className="text-white text-2xl font-extrabold" numberOfLines={1}>{ev.titulo}</Text>
@@ -806,7 +816,7 @@ export default function HomeScreen() {
               <View className="bg-black rounded-2xl p-5 mb-4 relative overflow-hidden">
                 <Stripes tint="rgba(255,255,255,0.08)" thickness={4} />
                 <View className="items-center">
-                  <Text className="text-white text-3xl font-extrabold">5K , 10K , 21KK</Text>
+                  <Text className="text-white text-3xl font-extrabold">5K , 10K , 21K</Text>
                   <Text className="text-white/80 text-lg font-medium">Distancias</Text>
                 </View>
               </View>
@@ -948,7 +958,82 @@ export default function HomeScreen() {
       {/* Modal ¿Cómo funciona? */}
       <HowItWorksModal visible={howWorksOpen} onClose={() => setHowWorksOpen(false)} />
       {/* Términos y Condiciones que se muestra al iniciar sesión (si corresponde) */}
-      <TermsModal visible={termsRequiredOpen || termsOpen} onClose={() => { setTermsOpen(false); setTermsRequiredOpen(false); }} onAccept={acceptTermsForUser} />
+      <TermsModal
+        visible={termsRequiredOpen || termsOpen}
+        initialTab="terms"
+        onClose={() => { setTermsOpen(false); setTermsRequiredOpen(false); }}
+        onAccept={acceptTermsForUser}
+        termsTitle="Términos y Condiciones"
+        waiverTitle="Descargo de responsabilidad"
+        termsContent={(
+          <View className="space-y-4">
+            <View>
+              <SectionTitle>1. Participación y requisitos</SectionTitle>
+              <Text className="text-gray-700 leading-6">
+                Al inscribirte confirmás que la información proporcionada es verídica y que estás físicamente apto para participar. Debés presentar documento válido y el número o pulsera oficial para acceder a largada y servicios.
+              </Text>
+            </View>
+            <View>
+              <SectionTitle>2. Comportamiento y seguridad</SectionTitle>
+              <Text className="text-gray-700 leading-6">
+                Respetá indicaciones de staff, señalización del circuito y zonas restringidas. El organizador puede modificar recorrido, horarios o suspender la prueba por fuerza mayor o razones de seguridad sin generar obligación de reembolso adicional.
+              </Text>
+            </View>
+            <View>
+              <SectionTitle>3. Pagos y reembolsos</SectionTitle>
+              <Text className="text-gray-700 leading-6">
+                Las inscripciones son personales y no transferibles. No son reembolsables salvo cancelación total del evento por la organización. En caso de reprogramación tu inscripción se mantiene activa automáticamente.
+              </Text>
+            </View>
+            <View>
+              <SectionTitle>4. Servicios incluidos</SectionTitle>
+              <Text className="text-gray-700 leading-6">
+                La inscripción puede incluir hidratación básica, control de tiempo y asistencia médica primaria. Servicios adicionales (medalla, kit, remera) se entregan sólo si fueron anunciados y mientras haya stock disponible.
+              </Text>
+            </View>
+            <View>
+              <SectionTitle>5. Datos personales y comunicaciones</SectionTitle>
+              <Text className="text-gray-700 leading-6">
+                Autorizás el uso de tus datos de contacto para enviarte información relevante del evento (cambios, resultados, avisos). No se compartirán con terceros ajenos a la organización salvo obligación legal.
+              </Text>
+            </View>
+          </View>
+        )}
+        waiverContent={(
+          <View className="space-y-4">
+            <View>
+              <SectionTitle>1. Riesgos asumidos</SectionTitle>
+              <Text className="text-gray-700 leading-6">
+                Comprendés que participar implica esfuerzo físico, exposición climática y posibilidad de caídas, golpes, calambres, deshidratación u otras lesiones imprevistas pese a las medidas de seguridad.
+              </Text>
+            </View>
+            <View>
+              <SectionTitle>2. Evaluación médica</SectionTitle>
+              <Text className="text-gray-700 leading-6">
+                Declarás haber realizado controles médicos adecuados y no presentar condiciones que te impidan participar. Ante cualquier síntoma adverso suspenderás tu esfuerzo y buscarás asistencia.
+              </Text>
+            </View>
+            <View>
+              <SectionTitle>3. Exención de la organización</SectionTitle>
+              <Text className="text-gray-700 leading-6">
+                Eximís a organizadores, sponsors y staff de responsabilidad por daños derivados de la participación salvo dolo o negligencia grave demostrable ante autoridad competente.
+              </Text>
+            </View>
+            <View>
+              <SectionTitle>4. Equipamiento y autocuidado</SectionTitle>
+              <Text className="text-gray-700 leading-6">
+                Te comprometés a usar calzado y vestimenta adecuados, hidratarte y respetar tu propio límite físico. No manipularás señalización ni obstaculizarás a otros participantes.
+              </Text>
+            </View>
+            <View>
+              <SectionTitle>5. Autorización de asistencia</SectionTitle>
+              <Text className="text-gray-700 leading-6">
+                Autorizás a recibir primeros auxilios y traslado si fuese necesario, asumiendo costos posteriores de atención médica especializada que no cubra la organización.
+              </Text>
+            </View>
+          </View>
+        )}
+      />
     </AppShell>
   );
 }

@@ -7,7 +7,6 @@ import { useAuth } from '../../context/AuthContext';
 import AppShell from '../components/AppShell';
 
 function formatTime(ms: number) {
-  // Mostrar horas:minutos:segundos (HH:MM:SS)
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -36,12 +35,10 @@ export default function ActivityScreen() {
   const [saving, setSaving] = useState(false);
   const [controlsLocked, setControlsLocked] = useState(false);
 
-  // Helpers de claves por usuario
   const suffix = authUser?._id ? `:${authUser._id}` : ':anon';
   const keyActivities = `@gesport:activities${suffix}`;
   const keyMode = `@gesport:activity:type${suffix}`;
 
-  // Cargar y persistir el modo de actividad preferido
   useEffect(() => {
     (async () => {
       try {
@@ -63,9 +60,8 @@ export default function ActivityScreen() {
     }
   };
 
-  // haversine distance (meters)
   const haversine = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) => {
-    const R = 6371000; // meters
+    const R = 6371000;
     const toRad = (x: number) => (x * Math.PI) / 180;
     const dLat = toRad(b.latitude - a.latitude);
     const dLon = toRad(b.longitude - a.longitude);
@@ -96,23 +92,27 @@ export default function ActivityScreen() {
     return true;
   };
 
+  // Solicitar permiso de ubicación al entrar a la pantalla
+  useEffect(() => {
+    (async () => {
+      try { await requestLocation(); } catch {}
+    })();
+  }, []);
+
   const start = async () => {
     if (controlsLocked) return;
     if (running) return;
     if (Platform.OS === 'web') {
       Alert.alert('Usa un dispositivo', 'El seguimiento con GPS funciona en un teléfono (Expo Go) o emulador con ubicación simulada.');
     }
-    // Iniciar SIEMPRE el cronómetro, aunque no se otorguen permisos de ubicación
     const now = Date.now();
-    startRef.current = now - elapsed; // soporte reanudar
+    startRef.current = now - elapsed;
     setRunning(true);
-  // actualizar cada segundo (no mostramos milisegundos)
-  timerRef.current = setInterval(tick, 1000) as unknown as number;
+    timerRef.current = setInterval(tick, 1000) as unknown as number;
 
-    // Intentar permisos y seguimiento de ubicación, pero no bloquear el cronómetro si falla
     try {
       const ok = await requestLocation();
-      if (!ok) return; // sin permisos: seguimos solo con cronómetro
+      if (!ok) return;
       locWatchRef.current = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.Balanced,
@@ -133,7 +133,6 @@ export default function ActivityScreen() {
         }
       );
     } catch {
-      // Ignorar errores de GPS; el cronómetro ya está corriendo
       setGpsStatus('error');
     }
   };
@@ -152,10 +151,7 @@ export default function ActivityScreen() {
 
   const reset = () => {
     if (controlsLocked) return;
-    // Asegurar que todo está detenido antes de limpiar estados
-    try {
-      pause();
-    } catch {}
+    try { pause(); } catch {}
     startRef.current = null;
     setElapsed(0);
     setPath([]);
@@ -195,13 +191,9 @@ export default function ActivityScreen() {
     }
     try {
       setSaving(true);
-      // Obtener una foto final del tiempo transcurrido en el momento del guardado
       const now = Date.now();
       const finalElapsed = startRef.current != null ? now - startRef.current : elapsed;
-      // Si está corriendo, pausar automáticamente
-      if (running) {
-        pause();
-      }
+      if (running) pause();
       const run: LocalRun = {
         id: `${Date.now()}`,
         date: new Date().toISOString(),
@@ -305,7 +297,7 @@ export default function ActivityScreen() {
           </View>
         </View>
 
-        {/* Real Map */}
+        {/* Mapa en tiempo real con recorrido */}
         <View className="px-6">
           <View style={{ height: 320, borderRadius: 16, overflow: 'hidden', backgroundColor: '#E5E7EB' }}>
             <MapView
@@ -331,7 +323,7 @@ export default function ActivityScreen() {
           </View>
         </View>
 
-        {/* Quick modes */}
+        {/* Modos rápidos */}
         <View className="px-6 mt-6">
           <View className="flex-row flex-wrap" style={{ gap: 8 }}>
             <TouchableOpacity

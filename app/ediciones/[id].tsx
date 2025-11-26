@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams } from 'expo-router';
-import { Calendar, Clock, Cloud, MapPin } from 'lucide-react-native';
+import { Award, Calendar, Clock, Cloud, MapPin, Trophy, Zap } from 'lucide-react-native';
 import { cssInterop } from 'nativewind';
 import React, { useEffect, useState } from 'react';
 import { Dimensions, Image, ScrollView, Text, View } from 'react-native';
@@ -16,7 +16,6 @@ const screenWidth = Dimensions.get('window').width;
 export default function EditionDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const [edition, setEdition] = useState<EditionItem | undefined>(undefined);
-  const [marathons, setMarathons] = useState<{ title: string; distance: string; time?: string; location?: string; date?: string }[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -35,34 +34,14 @@ export default function EditionDetailScreen() {
     })();
   }, [params.id]);
 
-  // Generate list of maratones for the year (4, 6 o 8 según edición)
-  useEffect(() => {
-    const id = params.id ? String(params.id) : undefined;
-    if (!id) return;
-    // Map fijo según pedido: 2023 -> 4, 2024 -> 6, 2025 -> 8
-    const countMap: Record<string, number> = {
-      'gesport-2023': 4,
-      'gesport-2024': 6,
-      'gesport-2025': 8,
-    };
-    const n = countMap[id] ?? 4;
-    const distances = ['5K', '10K', '15K', '21K', '42K'];
-    const times = ['05:30 AM', '06:00 AM', '06:30 AM', '07:00 AM', '07:30 AM', '08:00 AM', '08:30 AM', '09:00 AM'];
-    const location = 'Costanera de Formosa';
-    const list = Array.from({ length: n }).map((_, i) => ({
-      title: `Maratón Ciudad ${i + 1}`,
-      distance: distances[i % distances.length],
-      time: times[i % times.length],
-      location,
-      date: undefined,
-    }));
-    setMarathons(list);
-  }, [params.id]);
-
   // Fallback simple por si no se encuentra
   const title = edition?.year ?? 'Edición';
   const image = edition?.image ?? 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=900&auto=format&fit=crop&q=60';
   const description = edition?.description ?? 'Edición finalizada.';
+  
+  // Calcular estadísticas generales
+  const totalParticipants = (edition?.races || []).reduce((sum, r) => sum + (r.participants || 0), 0);
+  const totalRaces = edition?.races?.length || 0;
 
   return (
     <AppShell showBack title={title}>
@@ -92,110 +71,113 @@ export default function EditionDetailScreen() {
           <Text className="text-[#2C1810] text-lg font-bold mb-2">Resumen</Text>
           <Text className="text-[#5D4037] leading-6 mb-6">{description}</Text>
 
-          {/* Carta: Maratones de ese año */}
-          <View className="w-full mb-4">
-            <Card>
-              <Text className="text-[#2C1810] font-semibold mb-3">Maratones de {edition?.year || 'la edición'}</Text>
-              {marathons.length ? (
-                <View>
-                  {marathons.map((m, idx) => (
-                    <View key={idx} className="py-2 border-b border-gray-100">
-                      <View className="flex-row items-center">
-                        <View className="w-7 h-7 rounded-full bg-black items-center justify-center mr-3">
-                          <Text className="text-white text-xs font-bold">{idx + 1}</Text>
-                        </View>
-                        <Text className="text-[#2C1810] font-medium flex-1">{m.title}</Text>
-                        <Text className="text-[#5D4037]">{m.distance}</Text>
-                      </View>
-                      <View className="flex-row items-center mt-1 ml-10">
-                        <MapPin color="#4B5563" size={16} />
-                        <Text className="text-[#5D4037] ml-2 flex-1">{m.location ?? 'Costanera de Formosa'}</Text>
-                        <Clock color="#4B5563" size={16} />
-                        <Text className="text-[#5D4037] ml-2">{m.time ?? ''}</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text className="text-[#5D4037]">No hay maratones registradas para este año.</Text>
-              )}
+          {/* Estadísticas generales */}
+          <View className="flex-row gap-3 mb-4">
+            <Card className="flex-1">
+              <View className="items-center">
+                <Trophy color="#D4A574" size={28} />
+                <Text className="text-[#2C1810] font-bold text-lg mt-2">{totalRaces}</Text>
+                <Text className="text-[#5D4037] text-xs">Maratones</Text>
+              </View>
+            </Card>
+            <Card className="flex-1">
+              <View className="items-center">
+                <Award color="#D4A574" size={28} />
+                <Text className="text-[#2C1810] font-bold text-lg mt-2">{totalParticipants.toLocaleString()}</Text>
+                <Text className="text-[#5D4037] text-xs">Participantes</Text>
+              </View>
             </Card>
           </View>
 
-          {/* Carta: Imágenes (galería) */}
-          <View className="w-full mb-4">
-            <Card>
-              <Text className="text-[#2C1810] font-semibold mb-3">Imágenes</Text>
-              {edition?.gallery?.length ? (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {edition.gallery.map((g: any, idx: number) => (
-                    <Image
-                      key={idx}
-                      source={typeof g === 'string' ? { uri: g } : g}
-                      className="w-40 h-28 rounded-lg mr-3"
-                      resizeMode="cover"
-                    />
-                  ))}
-                </ScrollView>
-              ) : (
-                <Text className="text-[#5D4037]">Próximamente: fotos y momentos destacados de esta edición.</Text>
-              )}
-            </Card>
-          </View>
-
-          {/* Carta: Resultados (top 10 participantes) */}
+          {/* Resultados por cada maratón - Visual */}
           {edition?.races?.length ? (
-            <View className="w-full mb-4">
-              <Card>
-                <Text className="text-[#2C1810] font-semibold mb-3">Resultados</Text>
-                {edition.races.map((r) => (
-                  <View key={r.id} className="mb-4">
-                    <Text className="text-[#2C1810] font-bold mb-2">{r.name} • {r.distanceKm}K</Text>
-                    {r.results?.length ? (
-                      <View>
-                        {r.results.slice(0, 10).map((res, idx) => (
-                          <View key={idx} className="flex-row items-center py-1">
-                            <View className="w-7 h-7 rounded-full bg-black items-center justify-center mr-3">
-                              <Text className="text-white text-xs font-bold">{res.position}</Text>
-                            </View>
-                            <Text className="text-[#2C1810] flex-1">{res.name}</Text>
-                            <Text className="text-[#5D4037]">{res.time}</Text>
-                          </View>
-                        ))}
+            <View className="w-full mb-6">
+              <Text className="text-[#2C1810] font-bold text-lg mb-3">🏆 Resultados</Text>
+              {edition.races.map((race) => (
+                <Card key={race.id} className="mb-4">
+                  {/* Header maratón */}
+                  <View className="mb-3 pb-3 border-b border-gray-200">
+                    <Text className="text-[#2C1810] font-bold text-base">{race.name}</Text>
+                    <Text className="text-[#5D4037] text-sm mt-1">
+                      {race.participants?.toLocaleString()} participantes
+                    </Text>
+                    {race.recordTime && (
+                      <View className="flex-row items-center mt-2 bg-yellow-50 px-2 py-1 rounded">
+                        <Zap color="#D4A574" size={14} />
+                        <Text className="text-[#2C1810] font-bold text-sm ml-1">{race.recordTime}</Text>
+                        <Text className="text-[#5D4037] text-xs ml-1">Récord</Text>
                       </View>
-                    ) : (
-                      <Text className="text-[#5D4037]">Resultados no disponibles.</Text>
                     )}
                   </View>
-                ))}
-              </Card>
+
+                  {/* Top 10 */}
+                  {race.results && race.results.length > 0 ? (
+                    <View>
+                      {race.results.slice(0, 10).map((res, idx) => {
+                        let medal = '';
+                        if (idx === 0) medal = '🥇';
+                        else if (idx === 1) medal = '🥈';
+                        else if (idx === 2) medal = '🥉';
+
+                        return (
+                          <View 
+                            key={idx}
+                            className={`flex-row items-center py-2.5 px-2 rounded ${idx < 3 ? 'bg-yellow-50' : 'bg-gray-50'} ${idx < 9 ? 'border-b border-gray-100' : ''}`}
+                          >
+                            <Text className="text-lg font-bold mr-2 w-8">{medal || `${idx + 1}.`}</Text>
+                            <View className="flex-1">
+                              <Text className="text-[#2C1810] font-semibold text-sm">{res.name}</Text>
+                              {res.dorsal && <Text className="text-[#8D6E63] text-xs mt-0.5">#{res.dorsal}</Text>}
+                            </View>
+                            <View className="items-end">
+                              <Text className="text-[#2C1810] font-bold text-sm">{res.time}</Text>
+                              {idx === 0 && <Text className="text-[#D4A574] text-xs font-semibold">Ganador</Text>}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <Text className="text-[#5D4037]">Sin resultados</Text>
+                  )}
+                </Card>
+              ))}
             </View>
           ) : null}
 
-          {/* Carta: Información (lugar, clima, horario) */}
-          {/* Carta: Información (fecha, lugar, clima, horario) */}
+          {/* Información (fecha, lugar, clima, horario) */}
           <View className="w-full mb-6">
             <Card>
-              <Text className="text-[#2C1810] font-semibold mb-3">Información</Text>
-              <View className="flex-row items-center mb-2">
-                <Calendar color="#4B5563" size={18} />
-                <Text className="text-[#5D4037] ml-2">{edition?.date ?? 'Fecha no disponible'}</Text>
+              <Text className="text-[#2C1810] font-semibold mb-4 text-base">Información del Evento</Text>
+              <View className="space-y-3">
+                {edition?.date && (
+                  <View className="flex-row items-center">
+                    <Calendar color="#4B5563" size={20} />
+                    <Text className="text-[#5D4037] ml-3 font-medium">{edition.date}</Text>
+                  </View>
+                )}
+                {edition?.location && (
+                  <View className="flex-row items-center">
+                    <MapPin color="#4B5563" size={20} />
+                    <Text className="text-[#5D4037] ml-3 font-medium">{edition.location}</Text>
+                  </View>
+                )}
+                {edition?.weather && (
+                  <View className="flex-row items-center">
+                    <Cloud color="#4B5563" size={20} />
+                    <Text className="text-[#5D4037] ml-3 font-medium">{edition.weather}</Text>
+                  </View>
+                )}
+                {edition?.startTime && (
+                  <View className="flex-row items-center">
+                    <Clock color="#4B5563" size={20} />
+                    <Text className="text-[#5D4037] ml-3 font-medium">Inicio: {edition.startTime}</Text>
+                  </View>
+                )}
               </View>
-              <View className="flex-row items-center mb-2">
-                <MapPin color="#4B5563" size={18} />
-                <Text className="text-[#5D4037] ml-2">{edition?.location ?? 'Ubicación no disponible'}</Text>
-              </View>
-              <View className="flex-row items-center mb-2">
-                <Cloud color="#4B5563" size={18} />
-                <Text className="text-[#5D4037] ml-2">{edition?.weather ?? 'Clima no disponible'}</Text>
-              </View>
-              <View className="flex-row items-center">
-                <Clock color="#4B5563" size={18} />
-                <Text className="text-[#5D4037] ml-2">Inicio: {edition?.startTime ?? 'Horario no disponible'}</Text>
-              </View>
-              {edition?.info ? (
-                <Text className="text-[#5D4037] mt-3">{edition.info}</Text>
-              ) : null}
+              {edition?.info && (
+                <Text className="text-[#5D4037] mt-4 leading-5">{edition.info}</Text>
+              )}
             </Card>
           </View>
         </View>

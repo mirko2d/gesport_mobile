@@ -35,12 +35,6 @@ const buildMockCalendarEvents = (
         time: '10:00 AM',
         location: 'Estadio Nacional',
       },
-      {
-        id: '2',
-        title: 'Entrenamiento Equipo Juvenil',
-        time: '3:00 PM',
-        location: 'Campo Deportivo Norte',
-      },
     ],
     [asKey(d(8))]: [
       {

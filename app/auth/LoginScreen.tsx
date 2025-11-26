@@ -1,10 +1,9 @@
-import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Eye, EyeOff, Image as ImageIcon, Lock, Mail, MapPin, Phone, User } from 'lucide-react-native';
+import { Eye, EyeOff, Lock, Mail, MapPin, Phone, User } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { api, baseURL, uploadAvatar } from '../../lib/api';
+import { api } from '../../lib/api';
 import Button from '../components/ui/Button';
 
 type FormData = {
@@ -15,7 +14,6 @@ type FormData = {
   lastName: string;
   phone: string;
   address: string;
-  avatarUrl?: string;
 };
 
 export default function LoginScreen() {
@@ -26,7 +24,7 @@ export default function LoginScreen() {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [pingStatus, setPingStatus] = useState<string | null>(null);
+  
   const [formData, setFormData] = useState<FormData>({
     email: '',
     password: '',
@@ -35,7 +33,6 @@ export default function LoginScreen() {
     lastName: '',
     phone: '',
     address: '',
-    avatarUrl: '',
   });
 
   useEffect(() => {
@@ -86,7 +83,7 @@ export default function LoginScreen() {
   };
 
   const handleRegister = async () => {
-    const { email, password, confirmPassword, firstName, lastName, phone, address, avatarUrl } = formData;
+    const { email, password, confirmPassword, firstName, lastName, phone, address } = formData;
 
     const emailNorm = normalizeEmail(email);
     if (!emailNorm || !password || !confirmPassword || !firstName || !lastName || !phone || !address) {
@@ -105,12 +102,22 @@ export default function LoginScreen() {
       setSubmitting(true);
       await api.post(
         '/auth/signup',
-        { nombre, apellido, email: emailNorm, contrasenia: password, avatarUrl: (avatarUrl || undefined) },
+        { nombre, apellido, email: emailNorm, contrasenia: password },
         { headers: { 'Content-Type': 'application/json' } }
       );
-  // Auto login y redirección al Home
-      await signin(emailNorm, password);
-  router.replace('/');
+      // Registro exitoso: limpiar formulario y redirigir explícitamente a pantalla de login
+      Alert.alert('Registro exitoso', 'Tu cuenta fue creada. Inicia sesión para continuar.');
+      setFormData({
+        email: emailNorm,
+        password: '',
+        confirmPassword: '',
+        firstName: '',
+        lastName: '',
+        phone: '',
+        address: '',
+      });
+      setIsLogin(true);
+      router.replace('/auth/LoginScreen');
     } catch (e: any) {
       console.log('Signup error', e?.response?.status, e?.response?.data);
       const msg = e?.response?.data?.error || e?.message || 'No se pudo registrar';
@@ -120,49 +127,9 @@ export default function LoginScreen() {
     }
   };
 
-  const handlePickAvatar = async () => {
-    try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (perm.status !== 'granted') {
-        Alert.alert('Permiso requerido', 'Habilita el acceso a tus fotos para continuar.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-      // Cancelled
-      if (result.canceled) return;
-      const asset = result.assets?.[0];
-      if (!asset?.uri) return;
-      setSubmitting(true);
-      const { url } = await uploadAvatar(asset.uri);
-      setFormData((prev) => ({ ...prev, avatarUrl: url }));
-      Alert.alert('Foto subida', 'Tu foto fue cargada correctamente.');
-    } catch (e: any) {
-      console.log('Upload avatar error', e?.message, e?.response?.data);
-      Alert.alert('Error', e?.response?.data?.error || e?.message || 'No se pudo cargar la imagen');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  // Eliminado flujo de subida de avatar
 
-  const handlePing = async () => {
-    try {
-      setPingStatus('ping…');
-      const { data } = await api.get('/health');
-      setPingStatus(`ok: ${JSON.stringify(data)}`);
-      Alert.alert('Conexión OK', `Backend respondió: ${JSON.stringify(data)}`);
-    } catch (e: any) {
-      console.log('Ping error', e?.message, e?.response?.status, e?.response?.data);
-      const status = e?.response?.status;
-      const detail = e?.response?.data?.error || e?.message || 'Error de red';
-      setPingStatus(`error: ${status ?? ''} ${detail}`);
-      Alert.alert('No conecta con el backend', `URL: ${baseURL}\nDetalle: ${detail}`);
-    }
-  };
+  // Probar conexión (debug) eliminado para producción
 
   // Estados de carga o redirección
   if (loading || isAuth) {
@@ -305,22 +272,7 @@ export default function LoginScreen() {
                   />
                 </View>
 
-                {/* Foto de perfil (opcional) */}
-                <View className="flex-row items-center justify-between mt-2">
-                  <TouchableOpacity className="flex-row items-center" onPress={handlePickAvatar}>
-                    <ImageIcon size={18} color="#000000" />
-                    <Text className="text-primary font-medium ml-2">Elegir imagen (opcional)</Text>
-                  </TouchableOpacity>
-                  {formData.avatarUrl ? (
-                    <View className="flex-row items-center">
-                      <Image
-                        source={{ uri: formData.avatarUrl }}
-                        style={{ width: 40, height: 40, borderRadius: 20 }}
-                      />
-                      <Text className="text-gray-500 text-xs ml-2">Vista previa</Text>
-                    </View>
-                  ) : null}
-                </View>
+                {/* Avatar removido */}
               </>
             )}
 
@@ -335,15 +287,7 @@ export default function LoginScreen() {
                 <Text className="text-primary font-medium">¿Olvidaste tu contraseña?</Text>
               </TouchableOpacity>
             )}
-            <View className="mt-6 items-center">
-              <Text className="text-gray-400 text-xs">API: {baseURL}</Text>
-              <TouchableOpacity onPress={handlePing} className="mt-2">
-                <Text className="text-primary text-xs font-semibold">Probar conexión</Text>
-              </TouchableOpacity>
-              {pingStatus ? (
-                <Text className="text-gray-400 text-[10px] mt-1">{pingStatus}</Text>
-              ) : null}
-            </View>
+            {/* Indicadores de API y Probar conexión eliminados para producción */}
           </View>
         </View>
       </View>

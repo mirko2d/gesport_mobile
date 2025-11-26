@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { baseURL, createEvent, deleteEvent, listMyEvents, updateEvent } from '../../lib/api';
+import { baseURL, createEvent, deleteEvent, listEvents, listMyEvents, updateEvent } from '../../lib/api';
 import AppShell from '../components/AppShell';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
@@ -35,8 +35,22 @@ export default function EventsAdmin() {
     (async () => {
       try {
         setLoading(true);
-  const data = await listMyEvents();
-        setEvents(Array.isArray(data) ? data : []);
+        // Primero intento con listMyEvents (eventos creados por este superadmin)
+        const mine = await listMyEvents();
+        let merged: any[] = Array.isArray(mine) ? mine : [];
+        // Si no hay resultados (eventos antiguos sin createdBy o migrados), traigo el listado público completo
+        if (merged.length === 0) {
+          const all = await listEvents();
+          merged = Array.isArray(all) ? all : [];
+        } else {
+          // También puedo incluir eventos sin createdBy que aún estén activos
+          const all = await listEvents();
+          const extra = (Array.isArray(all) ? all : []).filter((ev: any) => !ev.createdBy);
+          // Unir evitando duplicados por _id
+          const ids = new Set(merged.map((e: any) => String(e._id)));
+          extra.forEach((e: any) => { if (!ids.has(String(e._id))) merged.push(e); });
+        }
+        setEvents(merged);
       } catch (e: any) {
         Alert.alert('Error', e?.response?.data?.error || e?.message || 'No se pudo cargar eventos');
       } finally {
@@ -246,7 +260,10 @@ export default function EventsAdmin() {
           </Card>
 
           {/* Lista de eventos */}
-          <Text className="text-black text-lg font-extrabold mb-2">Eventos</Text>
+          <Text className="text-black text-lg font-extrabold mb-2">Eventos (creados y heredados)</Text>
+          {events.length === 0 ? (
+            <Text className="text-gray-600 mb-4">No hay eventos para administrar. Crea uno nuevo arriba.</Text>
+          ) : null}
           {events.map((ev) => (
             <Card key={ev._id} className="mb-3 rounded-lg">
               {editId === ev._id ? (

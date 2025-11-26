@@ -27,7 +27,7 @@ export default function AppFooter({ extraBottomSpace = 0 }: { extraBottomSpace?:
     <TouchableOpacity
       accessibilityRole="button"
       onPress={onPress}
-      style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12 }}
+      style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 4, paddingBottom: 12 }}
       activeOpacity={0.8}
     >
       <View

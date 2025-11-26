@@ -1,16 +1,16 @@
 import { isPastEvent } from '@features/events';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Calendar, MapPin, Search, Users } from 'lucide-react-native';
+import { AlertCircle, Calendar, CheckCircle2, FileText, Heart, MapPin, Search, User, Users } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, Image, Linking, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, FlatList, Image, KeyboardAvoidingView, Linking, ListRenderItem, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-import { baseURL, createEnrollmentPreference, enroll, getEnrollmentPaymentStatus, listEventParticipants, listEvents, myEnrollments, unenroll, updateMe } from '../../lib/api';
+import { baseURL, createEnrollmentPreference, enroll, finalizeEvent, getEnrollmentPaymentStatus, listEventParticipants, listEvents, myEnrollments, unenroll } from '../../lib/api';
 import AppShell from '../components/AppShell';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
-import TermsModal from '../components/ui/TermsModal';
+// TermsModal eliminado: se implementa carta inline overlay
 const { width } = Dimensions.get('window');
 
 /** ===== Tipos ===== */
@@ -29,6 +29,8 @@ type ApiEvent = {
   maxParticipantes?: number;      // agregado en events.get
   cupos?: number;                 // backend actual
   precio?: number;                // backend actual (precio del evento)
+  activo?: boolean;              // bandera de visibilidad pública
+  finalizada?: boolean;          // agregado: carrera finalizada por admin
 };
 
 type UiEvent = {
@@ -44,6 +46,7 @@ type UiEvent = {
   participantsCount?: number;
   maxParticipants?: number | null;
   price?: number;
+  finalizada?: boolean;
 };
 
 const PLACEHOLDER_IMG =
@@ -84,6 +87,7 @@ function mapToUi(ev: ApiEvent): UiEvent {
     participantsCount: ev.participantes,
     maxParticipants: ev.maxParticipantes ?? (ev.cupos != null ? ev.cupos : null),
     price: typeof ev.precio === 'number' ? ev.precio : undefined,
+    finalizada: ev.finalizada === true,
   };
 }
 
@@ -102,10 +106,14 @@ export default function AllEventsScreen() {
   const [participantsLoading, setParticipantsLoading] = useState<boolean>(false);
   const [participants, setParticipants] = useState<Array<{ enrollmentId?: string; _id: string; nombre?: string; apellido?: string; email?: string; avatarUrl?: string; createdAt?: string; form?: any }>>([]);
   const [expandedParticipantId, setExpandedParticipantId] = useState<string | null>(null);
-  const [showTerms, setShowTerms] = useState<boolean>(false);
+  // Términos/Descargo visibles siempre dentro del formulario (sin toggle)
   const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
   const [acceptedWaiver, setAcceptedWaiver] = useState<boolean>(false);
   const [enrolledEventIds, setEnrolledEventIds] = useState<Set<string>>(new Set());
+  // Cuando abrimos términos desde el formulario de inscripción, cerramos ese modal
+  // y marcamos que al cerrar/aceptar términos hay que volver al formulario.
+  // Ya no cerramos el modal de inscripción al abrir términos; mostramos términos encima.
+  // returnToEnroll ya no se usa al eliminar el modal externo de términos
   const { isAuth, user } = useAuth();
   const isPrivileged = user?.role === 'admin' || user?.role === 'superadmin';
 
@@ -132,14 +140,21 @@ export default function AllEventsScreen() {
       setErrorText(null);
       console.log('listEvents URL:', `${baseURL}/events/`);
       const data: ApiEvent[] = await listEvents();
-      const filteredByYear = Array.isArray(data)
+      // Filtro defensivo adicional (el backend ya excluye ENTRENAMIENTO y eventos inactivos, pero por si se usa otro backend antiguo)
+      const defensivelyFiltered = Array.isArray(data)
         ? data.filter((e) => {
-            if (!yearParam) return true;
-            if (!e.fecha) return false;
-            const dt = new Date(e.fecha);
-            return dt.getFullYear() === yearParam;
+            const cat = (e.categoria || '').toUpperCase();
+            if (cat === 'ENTRENAMIENTO') return false;
+            if (e.activo === false) return false;
+            return true;
           })
         : [];
+      const filteredByYear = defensivelyFiltered.filter((e) => {
+        if (!yearParam) return true;
+        if (!e.fecha) return false;
+        const dt = new Date(e.fecha);
+        return dt.getFullYear() === yearParam;
+      });
       const mapped = filteredByYear.map(mapToUi);
       setEvents(mapped);
     } catch (err: any) {
@@ -158,6 +173,13 @@ export default function AllEventsScreen() {
     loadEvents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [yearParam]);
+
+  // Refrescar lista cada vez que la pantalla gana foco (ej: después de eliminar en Admin)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadEvents();
+    }, [yearParam])
+  );
 
   // Prefill de datos del usuario si está autenticado
   useEffect(() => {
@@ -205,14 +227,14 @@ export default function AllEventsScreen() {
     [events, selectedCategory]
   );
 
-  const openEnrollForm = (event: UiEvent) => {
+  const openEnrollForm = React.useCallback((event: UiEvent) => {
     if (!isAuth) {
       router.push('/auth/LoginScreen');
       return;
     }
     setSelectedEvent(event);
     setEnrollModalOpen(true);
-  };
+  }, [isAuth, router]);
 
   const submitEnroll = async () => {
     if (!selectedEvent) return;
@@ -222,12 +244,16 @@ export default function AllEventsScreen() {
     }
     // Validaciones locales
     const missing: string[] = [];
+    if (!fullName.trim()) missing.push('Nombre completo');
+    if (!email.trim()) missing.push('Email');
+    if (!phone.trim()) missing.push('Teléfono');
     if (!dni.trim()) missing.push('DNI');
     if (!birthdate.trim()) missing.push('Fecha de nacimiento');
     if (!gender) missing.push('Género');
     if (!shirtSize) missing.push('Talla de remera');
     if (!emgName.trim()) missing.push('Contacto de emergencia - Nombre');
     if (!emgPhone.trim()) missing.push('Contacto de emergencia - Teléfono');
+    if (!emgRelation.trim()) missing.push('Contacto de emergencia - Relación');
     if (!acceptedTerms) missing.push('Aceptar Términos y Condiciones');
     if (!acceptedWaiver) missing.push('Aceptar Descargo de Responsabilidad');
     if (missing.length) {
@@ -314,7 +340,7 @@ export default function AllEventsScreen() {
     }
   };
 
-  const confirmCancel = (event: UiEvent) => {
+  const confirmCancel = React.useCallback((event: UiEvent) => {
     Alert.alert(
       'Cancelar inscripción',
       `¿Seguro que quieres cancelar tu inscripción a ${event.title}?`,
@@ -339,9 +365,9 @@ export default function AllEventsScreen() {
         }
       ]
     );
-  };
+  }, [unenroll, loadEvents]);
 
-  const openParticipants = async (event: UiEvent) => {
+  const openParticipants = React.useCallback(async (event: UiEvent) => {
     try {
       setParticipantsModalOpen(true);
       setParticipantsLoading(true);
@@ -352,17 +378,167 @@ export default function AllEventsScreen() {
     } finally {
       setParticipantsLoading(false);
     }
-  };
+  }, []);
+
+  // Componente memoizado para cada tarjeta de evento
+  const EventCard = React.memo(({ event }: { event: UiEvent }) => {
+    const isPast = isPastEvent(event.dateISO);
+    const isFinalized = event.finalizada === true;
+    const isFull =
+      typeof event.maxParticipants === 'number' &&
+      typeof event.participantsCount === 'number' &&
+      event.maxParticipants > 0 &&
+      event.participantsCount >= event.maxParticipants;
+    const isEnrolled = enrolledEventIds.has(event.id);
+    const priceLabel = event.price && event.price > 0 ? formatCurrency(event.price) : undefined;
+    return (
+      <Card
+        variant="gradient"
+        gradientColors={['#ffffff', '#eef2ff']}
+        key={event.id}
+        className="rounded-lg mb-4 overflow-hidden"
+      >
+        <Image
+          source={{ uri: event.image }}
+          style={{ width: '100%', height: 160 }}
+          className="rounded-t-lg"
+          resizeMode="cover"
+        />
+        <View className="p-4">
+          <Text className="text-xl font-bold text-gray-800 mb-2">
+            {event.title}
+          </Text>
+
+          <View className="flex-row items-center mb-1">
+            <Calendar color="#6b7280" size={16} />
+            <Text className="text-gray-600 ml-2">{event.date}</Text>
+            <Text className="text-gray-600 ml-2">•</Text>
+            <Text className="text-gray-600 ml-2">{event.time}</Text>
+          </View>
+
+          <View className="flex-row items-center mb-1">
+            <MapPin color="#6b7280" size={16} />
+            <Text className="text-gray-600 ml-2">{event.location}</Text>
+          </View>
+
+          <View className="flex-row items-center mb-3">
+            <Users color="#6b7280" size={16} />
+            <Text className="text-gray-600 ml-2">
+              {event.participantsText}
+            </Text>
+          </View>
+
+          <View className="gap-3">
+            <View className="flex-row flex-wrap gap-2 items-center">
+              <View className="bg-primary px-3 py-1 rounded-full">
+                <Text className="text-white font-medium text-sm">
+                  {event.category}
+                </Text>
+              </View>
+              {isPast ? (
+                <View className="bg-gray-800 px-3 py-1 rounded-full">
+                  <Text className="text-white font-semibold text-sm">Finalizado</Text>
+                </View>
+              ) : null}
+              {priceLabel ? (
+                <View className="bg-green-600 px-3 py-1 rounded-full">
+                  <Text className="text-white font-semibold text-sm">{priceLabel}</Text>
+                </View>
+              ) : (
+                <View className="bg-gray-200 px-3 py-1 rounded-full">
+                  <Text className="text-gray-700 font-medium text-sm">Gratis</Text>
+                </View>
+              )}
+            </View>
+
+            <View className="flex-row flex-wrap gap-2">
+              {isPrivileged ? (
+                <Button title="Inscriptos" variant="outline" onPress={() => openParticipants(event)} />
+              ) : null}
+              {isPrivileged ? (
+                <Button
+                  title={isFinalized ? 'Finalizada' : 'Finalizar carrera'}
+                  variant="outline"
+                  onPress={async () => {
+                    if (isFinalized) return;
+                    try {
+                      Alert.alert('Confirmar', '¿Finalizar esta carrera? No se podrá cancelar inscripciones luego.', [
+                        { text: 'Cancelar', style: 'cancel' },
+                        {
+                          text: 'Finalizar', style: 'destructive', onPress: async () => {
+                            try {
+                              await finalizeEvent(event.id);
+                              Alert.alert('Listo', 'La carrera se marcó como finalizada.');
+                              loadEvents();
+                            } catch (e) {
+                              Alert.alert('Error', 'No se pudo finalizar el evento.');
+                            }
+                          }
+                        }
+                      ]);
+                    } catch {}
+                  }}
+                  disabled={isFinalized}
+                />
+              ) : null}
+              <Button
+                title="Resultados"
+                variant="outline"
+                onPress={() => router.push({ pathname: '/events/[id]/results', params: { id: event.id } })}
+              />
+              {user?.role === 'superadmin' ? (
+                <Button
+                  title="Contador meta"
+                  variant="outline"
+                  onPress={() => router.push({ pathname: '/events/[id]/contador', params: { id: event.id } })}
+                />
+              ) : null}
+              {isEnrolled ? (
+                <>
+                  {isPast || isFinalized ? null : (
+                    <Button title="Cancelar" variant="outline" onPress={() => confirmCancel(event)} />
+                  )}
+                  <View className="bg-gray-800 px-3 py-1 rounded-full justify-center">
+                    <Text className="text-white font-semibold text-sm">Inscripto</Text>
+                  </View>
+                </>
+              ) : (
+                <Button
+                  title={isPast || isFinalized ? 'Finalizado' : isFull ? 'Cupos llenos' : 'Inscribirme'}
+                  onPress={() => openEnrollForm(event)}
+                  disabled={isPast || isFinalized || isFull}
+                />
+              )}
+              <Button
+                title="Ver detalles"
+                variant="outline"
+                onPress={() => router.push({ pathname: '/events/[id]', params: { id: event.id } })}
+              />
+            </View>
+          </View>
+        </View>
+      </Card>
+    );
+  });
+  EventCard.displayName = 'EventCard';
+
+  const renderEvent: ListRenderItem<UiEvent> = ({ item }) => <EventCard event={item} />;
 
   return (
     <>
     <AppShell showBack title="Todos los Eventos">
       {/* Search (placeholder visual) y filtro por categoría */}
       <View className="p-4">
+        {/* Acciones rápidas: recargar lista */}
+        <View className="flex-row items-center justify-end mb-3">
+          <TouchableOpacity onPress={loadEvents} className="px-3 py-1 rounded-full bg-gray-800">
+            <Text className="text-white text-xs font-semibold">Actualizar</Text>
+          </TouchableOpacity>
+        </View>
         {errorText ? (
           <View className="bg-red-50 border border-red-200 rounded-xl p-3 mb-3">
             <Text className="text-red-800 mb-1">{errorText}</Text>
-            <Text className="text-red-600 text-xs mb-2">API actual: {baseURL}</Text>
+            {/* Texto de API eliminado para producción */}
             <View className="flex-row gap-2">
               <TouchableOpacity
                 className="px-3 py-2 rounded-lg bg-red-600"
@@ -411,136 +587,32 @@ export default function AllEventsScreen() {
         </ScrollView>
       </View>
 
-      {/* Lista de eventos */}
-      <ScrollView
-        className="flex-1 px-4"
-        contentContainerStyle={{ paddingBottom: 72 + 16 + (insets?.bottom || 0) + 24 }}
-      >
-        {loading ? (
-          <View className="flex-1 items-center justify-center py-12">
-            <Calendar color="#9ca3af" size={48} />
-            <Text className="text-gray-500 mt-4">Cargando eventos...</Text>
-          </View>
-        ) : filteredEvents.length > 0 ? (
-          filteredEvents.map((event) => {
-            const isPast = isPastEvent(event.dateISO);
-            const isFull =
-              typeof event.maxParticipants === 'number' &&
-              typeof event.participantsCount === 'number' &&
-              event.maxParticipants > 0 &&
-              event.participantsCount >= event.maxParticipants;
-            const isEnrolled = enrolledEventIds.has(event.id);
-            const priceLabel = event.price && event.price > 0 ? formatCurrency(event.price) : undefined;
-            return (
-            <Card
-              variant="gradient"
-              gradientColors={['#ffffff', '#eef2ff']}
-              key={event.id}
-              className="rounded-lg mb-4 overflow-hidden"
-            >
-              <Image
-                source={{ uri: event.image }}
-                style={{ width: '100%', height: 160 }}
-                className="rounded-t-lg"
-                resizeMode="cover"
-              />
-              <View className="p-4">
-                <Text className="text-xl font-bold text-gray-800 mb-2">
-                  {event.title}
-                </Text>
-
-                <View className="flex-row items-center mb-1">
-                  <Calendar color="#6b7280" size={16} />
-                  <Text className="text-gray-600 ml-2">{event.date}</Text>
-                  <Text className="text-gray-600 ml-2">•</Text>
-                  <Text className="text-gray-600 ml-2">{event.time}</Text>
-                </View>
-
-                <View className="flex-row items-center mb-1">
-                  <MapPin color="#6b7280" size={16} />
-                  <Text className="text-gray-600 ml-2">{event.location}</Text>
-                </View>
-
-                <View className="flex-row items-center mb-3">
-                  <Users color="#6b7280" size={16} />
-                  <Text className="text-gray-600 ml-2">
-                    {event.participantsText}
-                  </Text>
-                </View>
-
-                <View className="gap-3">
-                  <View className="flex-row flex-wrap gap-2 items-center">
-                    <View className="bg-primary px-3 py-1 rounded-full">
-                      <Text className="text-white font-medium text-sm">
-                        {event.category}
-                      </Text>
-                    </View>
-                    {isPast ? (
-                      <View className="bg-gray-800 px-3 py-1 rounded-full">
-                        <Text className="text-white font-semibold text-sm">Finalizado</Text>
-                      </View>
-                    ) : null}
-                    {priceLabel ? (
-                      <View className="bg-green-600 px-3 py-1 rounded-full">
-                        <Text className="text-white font-semibold text-sm">{priceLabel}</Text>
-                      </View>
-                    ) : (
-                      <View className="bg-gray-200 px-3 py-1 rounded-full">
-                        <Text className="text-gray-700 font-medium text-sm">Gratis</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View className="flex-row flex-wrap gap-2">
-                    {isPrivileged ? (
-                      <Button title="Inscriptos" variant="outline" onPress={() => openParticipants(event)} />
-                    ) : null}
-                    <Button
-                      title="Resultados"
-                      variant="outline"
-                      onPress={() => router.push({ pathname: '/events/[id]/results', params: { id: event.id } })}
-                    />
-                    {user?.role === 'superadmin' ? (
-                      <Button
-                        title="Contador meta"
-                        variant="outline"
-                        onPress={() => router.push({ pathname: '/events/[id]/contador', params: { id: event.id } })}
-                      />
-                    ) : null}
-                    {isEnrolled ? (
-                      <>
-                        <Button title="Cancelar" variant="outline" onPress={() => confirmCancel(event)} />
-                        <View className="bg-gray-800 px-3 py-1 rounded-full justify-center">
-                          <Text className="text-white font-semibold text-sm">Inscripto</Text>
-                        </View>
-                      </>
-                    ) : (
-                      <Button
-                        title={isPast ? 'Finalizado' : isFull ? 'Cupos llenos' : 'Inscribirme'}
-                        onPress={() => openEnrollForm(event)}
-                        disabled={isPast || isFull}
-                      />
-                    )}
-                    <Button
-                      title="Ver detalles"
-                      variant="outline"
-                      onPress={() => router.push({ pathname: '/events/[id]', params: { id: event.id } })}
-                    />
-                  </View>
-                </View>
-              </View>
-            </Card>
-            );
-          })
-        ) : (
-          <View className="flex-1 items-center justify-center py-12">
-            <Calendar color="#9ca3af" size={48} />
-            <Text className="text-gray-500 text-center mt-4">
-              No se encontraron eventos para esta categoría
-            </Text>
-          </View>
-        )}
-      </ScrollView>
+      {/* Lista de eventos optimizada */}
+      {loading ? (
+        <View className="flex-1 items-center justify-center py-12">
+          <Calendar color="#9ca3af" size={48} />
+          <Text className="text-gray-500 mt-4">Cargando eventos...</Text>
+        </View>
+      ) : filteredEvents.length > 0 ? (
+        <FlatList
+          data={filteredEvents}
+          renderItem={renderEvent}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 72 + 16 + (insets?.bottom || 0) + 24, paddingTop: 4 }}
+          removeClippedSubviews
+          windowSize={7}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          updateCellsBatchingPeriod={50}
+        />
+      ) : (
+        <View className="flex-1 items-center justify-center py-12 px-4">
+          <Calendar color="#9ca3af" size={48} />
+          <Text className="text-gray-500 text-center mt-4">
+            No se encontraron eventos para esta categoría
+          </Text>
+        </View>
+      )}
 
       {/* Bottom bar eliminada para evitar superposición con el footer global */}
   </AppShell>
@@ -548,149 +620,397 @@ export default function AllEventsScreen() {
   <Modal
       visible={enrollModalOpen}
       transparent
-      animationType="fade"
+      animationType="slide"
       onRequestClose={() => setEnrollModalOpen(false)}
     >
-      <View className="flex-1 bg-black/60 px-6">
-        {/* Empuja el contenido cuando aparece el teclado y permite scroll */}
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <View className="bg-white rounded-2xl w-full max-h-[90%]">
-            <ScrollView
-              className="w-full"
-              contentContainerStyle={{ padding: 20, paddingBottom: 180 }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator
-            >
-          <Text className="text-lg font-bold text-gray-900 mb-1">Inscribirme</Text>
-          <Text className="text-gray-600 mb-4">
-            {selectedEvent ? `Evento: ${selectedEvent.title}` : ''}
-          </Text>
-
-          {isAuth ? (
-            <>
-              <Text className="text-gray-800 mb-1">Nombre completo</Text>
-              <TextInput
-                className="border border-gray-300 rounded-lg px-3 py-2 mb-3"
-                placeholder="Tu nombre"
-                value={fullName}
-                onChangeText={setFullName}
-              />
-
-              <Text className="text-gray-800 mb-1">Email</Text>
-              <TextInput
-                className="border border-gray-300 rounded-lg px-3 py-2 mb-3"
-                placeholder="tu@email.com"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={email}
-                onChangeText={setEmail}
-              />
-
-              <Text className="text-gray-800 mb-1">Teléfono (opcional)</Text>
-              <TextInput
-                className="border border-gray-300 rounded-lg px-3 py-2 mb-4"
-                placeholder="Ej: +57 300 123 4567"
-                keyboardType="phone-pad"
-                value={phone}
-                onChangeText={setPhone}
-              />
-
-              {/* Formulario obligatorio */}
-              <Text className="text-gray-900 font-semibold mt-2 mb-2">Datos de inscripción</Text>
-              <Text className="text-gray-800 mb-1">DNI</Text>
-              <TextInput
-                className="border border-gray-300 rounded-lg px-3 py-2 mb-3"
-                placeholder="Tu DNI"
-                value={dni}
-                onChangeText={setDni}
-              />
-              <Text className="text-gray-800 mb-1">Fecha de nacimiento (YYYY-MM-DD)</Text>
-              <TextInput
-                className="border border-gray-300 rounded-lg px-3 py-2 mb-3"
-                placeholder="1990-05-20"
-                value={birthdate}
-                onChangeText={setBirthdate}
-              />
-              <Text className="text-gray-800 mb-1">Género</Text>
-              <View className="flex-row gap-2 mb-3">
-                {(['F','M','X','Otro'] as const).map((g) => (
-                  <TouchableOpacity key={g} onPress={() => setGender(g)} className={`px-3 py-2 rounded-full ${gender===g?'bg-primary':'bg-gray-200'}`}>
-                    <Text className={gender===g? 'text-white font-medium':'text-gray-800'}>{g}</Text>
+      <View className="flex-1 bg-black/40">
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}>
+          <View className="flex-1 bg-white rounded-t-3xl mt-2 overflow-hidden">
+            {/* Navbar consistente con AppShell */}
+            <View style={{ backgroundColor: '#000', paddingTop: (insets?.top || 0) + 16, paddingBottom: 16, paddingHorizontal: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ width: 44, alignItems: 'flex-start', justifyContent: 'center' }}>
+                  <TouchableOpacity
+                    onPress={() => setEnrollModalOpen(false)}
+                    className="h-10 w-10 rounded-full bg-white/10 items-center justify-center"
+                  >
+                    <Text className="text-white font-bold">✕</Text>
                   </TouchableOpacity>
-                ))}
+                </View>
+                <Text className="text-white text-xl font-extrabold">GESPORT</Text>
+                <View style={{ width: 44 }} />
               </View>
-              <Text className="text-gray-800 mb-1">Talla de remera</Text>
-              <View className="flex-row gap-2 mb-3 flex-wrap">
-                {(['XS','S','M','L','XL','XXL'] as const).map((t) => (
-                  <TouchableOpacity key={t} onPress={() => setShirtSize(t)} className={`px-3 py-2 rounded-full ${shirtSize===t?'bg-primary':'bg-gray-200'}`}>
-                    <Text className={shirtSize===t? 'text-white font-medium':'text-gray-800'}>{t}</Text>
-                  </TouchableOpacity>
-                ))}
+              <View className="mt-4">
+                <Text className="text-white font-semibold text-base">Inscripción</Text>
+                <Text className="text-white/80 text-xs mt-1">{selectedEvent ? selectedEvent.title : 'Evento'}</Text>
               </View>
-              <Text className="text-gray-900 font-semibold mt-2 mb-2">Contacto de emergencia</Text>
-              <Text className="text-gray-800 mb-1">Nombre</Text>
-              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-3" placeholder="Nombre de contacto" value={emgName} onChangeText={setEmgName} />
-              <Text className="text-gray-800 mb-1">Teléfono</Text>
-              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-4" placeholder="Teléfono de contacto" value={emgPhone} onChangeText={setEmgPhone} keyboardType="phone-pad" />
-              <Text className="text-gray-800 mb-1">Relación (opcional)</Text>
-              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-4" placeholder="Ej: Familiar, Amigo" value={emgRelation} onChangeText={setEmgRelation} />
+            </View>
 
-              <Text className="text-gray-900 font-semibold mt-2 mb-2">Salud (opcional)</Text>
-              <Text className="text-gray-800 mb-1">Alergias</Text>
-              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-3" placeholder="Alergias" value={allergies} onChangeText={setAllergies} />
-              <Text className="text-gray-800 mb-1">Condiciones</Text>
-              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-3" placeholder="Condiciones" value={conditions} onChangeText={setConditions} />
-              <Text className="text-gray-800 mb-1">Medicamentos</Text>
-              <TextInput className="border border-gray-300 rounded-lg px-3 py-2 mb-4" placeholder="Medicamentos" value={meds} onChangeText={setMeds} />
+            {isAuth ? (
+              <ScrollView
+                contentContainerStyle={{ padding: 20, paddingBottom: 240 }}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                showsVerticalScrollIndicator={true}
+                scrollIndicatorInsets={{ bottom: 24 }}
+                contentInset={{ bottom: 24 } as any}
+              >
+              {/* Resumen del evento (header visual adicional) */}
+              {selectedEvent && (
+                <View className="mb-6">
+                  <Card className="overflow-hidden border border-gray-200">
+                    <Image source={{ uri: selectedEvent.image }} style={{ width: '100%', height: 140 }} resizeMode="cover" />
+                    <View className="p-4">
+                      <Text className="text-xl font-bold text-gray-800 mb-1">{selectedEvent.title}</Text>
+                      <View className="flex-row items-center mb-1">
+                        <Calendar color="#6b7280" size={16} />
+                        <Text className="text-gray-600 ml-2">{selectedEvent.date}</Text>
+                        <Text className="text-gray-600 ml-2">•</Text>
+                        <Text className="text-gray-600 ml-2">{selectedEvent.time}</Text>
+                      </View>
+                      <View className="flex-row items-center mb-1">
+                        <MapPin color="#6b7280" size={16} />
+                        <Text className="text-gray-600 ml-2">{selectedEvent.location}</Text>
+                      </View>
+                    </View>
+                  </Card>
+                </View>
+              )}
 
-              <View className="flex-row justify-end gap-2 flex-wrap">
+              {/* Datos personales section */}
+              <View className="mb-6">
+                <View className="flex-row items-center gap-2 mb-4">
+                  <User size={20} color="#0066cc" />
+                  <Text className="text-lg font-bold text-gray-900">Datos personales *</Text>
+                </View>
+                <View className="bg-gray-50 rounded-xl p-4 space-y-4">
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-2">Nombre completo *</Text>
+                    <TextInput
+                      className="border-2 border-gray-200 rounded-lg px-4 py-3 bg-white"
+                      placeholder="Tu nombre"
+                      placeholderTextColor="#9ca3af"
+                      value={fullName}
+                      onChangeText={setFullName}
+                    />
+                  </View>
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-2">Email *</Text>
+                    <TextInput
+                      className="border-2 border-gray-200 rounded-lg px-4 py-3 bg-white"
+                      placeholder="tu@email.com"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      value={email}
+                      onChangeText={setEmail}
+                    />
+                  </View>
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-2">Teléfono *</Text>
+                    <TextInput
+                      className="border-2 border-gray-200 rounded-lg px-4 py-3 bg-white"
+                      placeholder="Ej: +57 300 123 4567"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="phone-pad"
+                      value={phone}
+                      onChangeText={setPhone}
+                    />
+                  </View>
+                </View>
+              </View>
+
+              {/* Datos de inscripción section */}
+              <View className="mb-6">
+                <View className="flex-row items-center gap-2 mb-4">
+                  <FileText size={20} color="#0066cc" />
+                  <Text className="text-lg font-bold text-gray-900">Datos de inscripción *</Text>
+                </View>
+                <View className="bg-blue-50 rounded-xl p-4 space-y-4">
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-2">DNI *</Text>
+                    <TextInput
+                      className="border-2 border-blue-200 rounded-lg px-4 py-3 bg-white"
+                      placeholder="Tu DNI"
+                      placeholderTextColor="#9ca3af"
+                      value={dni}
+                      onChangeText={setDni}
+                    />
+                  </View>
+
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-2">Fecha de nacimiento (YYYY-MM-DD) *</Text>
+                    <TextInput
+                      className="border-2 border-blue-200 rounded-lg px-4 py-3 bg-white"
+                      placeholder="1990-05-20"
+                      placeholderTextColor="#9ca3af"
+                      value={birthdate}
+                      onChangeText={setBirthdate}
+                    />
+                  </View>
+
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-3">Género *</Text>
+                    <View className="flex-row gap-2 flex-wrap">
+                      {(['F','M','X','Otro'] as const).map((g) => (
+                        <TouchableOpacity
+                          key={g}
+                          onPress={() => setGender(g)}
+                          className={`px-4 py-3 rounded-lg font-semibold ${
+                            gender === g
+                              ? 'bg-primary'
+                              : 'bg-white border-2 border-blue-200'
+                          }`}
+                        >
+                          <Text className={gender === g ? 'text-white font-semibold' : 'text-gray-700'}>
+                            {g}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-3">Talla de remera *</Text>
+                    <View className="flex-row gap-2 flex-wrap">
+                      {(['XS','S','M','L','XL','XXL'] as const).map((t) => (
+                        <TouchableOpacity
+                          key={t}
+                          onPress={() => setShirtSize(t)}
+                          className={`px-3 py-2 rounded-lg ${
+                            shirtSize === t
+                              ? 'bg-primary'
+                              : 'bg-white border-2 border-blue-200'
+                          }`}
+                        >
+                          <Text className={shirtSize === t ? 'text-white font-semibold' : 'text-gray-700 font-medium'}>
+                            {t}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Contacto de emergencia section */}
+              <View className="mb-6">
+                <View className="flex-row items-center gap-2 mb-4">
+                  <AlertCircle size={20} color="#0066cc" />
+                  <Text className="text-lg font-bold text-gray-900">Contacto de emergencia *</Text>
+                </View>
+                <View className="bg-red-50 rounded-xl p-4 space-y-4">
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-2">Nombre *</Text>
+                    <TextInput
+                      className="border-2 border-red-200 rounded-lg px-4 py-3 bg-white"
+                      placeholder="Nombre de contacto"
+                      placeholderTextColor="#9ca3af"
+                      value={emgName}
+                      onChangeText={setEmgName}
+                    />
+                  </View>
+
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-2">Teléfono *</Text>
+                    <TextInput
+                      className="border-2 border-red-200 rounded-lg px-4 py-3 bg-white"
+                      placeholder="Teléfono de contacto"
+                      placeholderTextColor="#9ca3af"
+                      value={emgPhone}
+                      onChangeText={setEmgPhone}
+                      keyboardType="phone-pad"
+                    />
+                  </View>
+
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-2">Relación *</Text>
+                    <TextInput
+                      className="border-2 border-red-200 rounded-lg px-4 py-3 bg-white"
+                      placeholder="Ej: Familiar, Amigo"
+                      placeholderTextColor="#9ca3af"
+                      value={emgRelation}
+                      onChangeText={setEmgRelation}
+                    />
+                  </View>
+                </View>
+              </View>
+
+              {/* Salud section (opcional) */}
+              <View className="mb-6">
+                <View className="flex-row items-center gap-2 mb-4">
+                  <Heart size={20} color="#0066cc" />
+                  <Text className="text-lg font-bold text-gray-900">Información de salud (opcional)</Text>
+                </View>
+                <View className="bg-green-50 rounded-xl p-4 space-y-4">
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-2">Alergias</Text>
+                    <TextInput
+                      className="border-2 border-green-200 rounded-lg px-4 py-3 bg-white"
+                      placeholder="Ej: Penicilina, cacahuetes"
+                      placeholderTextColor="#9ca3af"
+                      value={allergies}
+                      onChangeText={setAllergies}
+                    />
+                  </View>
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-2">Condiciones de salud</Text>
+                    <TextInput
+                      className="border-2 border-green-200 rounded-lg px-4 py-3 bg-white"
+                      placeholder="Ej: Asma, diabetes"
+                      placeholderTextColor="#9ca3af"
+                      value={conditions}
+                      onChangeText={setConditions}
+                    />
+                  </View>
+                  <View>
+                    <Text className="text-gray-700 font-semibold mb-2">Medicamentos actuales</Text>
+                    <TextInput
+                      className="border-2 border-green-200 rounded-lg px-4 py-3 bg-white"
+                      placeholder="Ej: Ibuprofeno, vitaminas"
+                      placeholderTextColor="#9ca3af"
+                      value={meds}
+                      onChangeText={setMeds}
+                    />
+                  </View>
+                  <Text className="text-gray-500 text-xs mt-2">Podés dejar en blanco si no corresponde.</Text>
+                </View>
+              </View>
+
+              {/* Términos y condiciones section (ampliada) */}
+              <View className="mb-8">
+                <View className="bg-gray-100 rounded-xl p-5 space-y-6">
+                  <View className="flex-row items-start gap-3">
+                    <TouchableOpacity
+                      onPress={() => setAcceptedTerms((v) => !v)}
+                      className={`w-6 h-6 rounded-lg border-2 mt-1 items-center justify-center flex-shrink-0 ${
+                        acceptedTerms ? 'bg-primary border-primary' : 'border-gray-400 bg-white'
+                      }`}
+                    >
+                      {acceptedTerms && <CheckCircle2 size={20} color="#fff" />}
+                    </TouchableOpacity>
+                    <View className="flex-1">
+                      <Text className="text-gray-700 font-semibold">
+                        Acepto los términos y condiciones *
+                      </Text>
+                        <View className="mt-3" />
+                        {
+                          <View className="mt-4 bg-white rounded-lg p-4 border border-gray-200 space-y-4">
+                            <View>
+                              <Text className="text-gray-800 font-semibold mb-1">1. Participación y requisitos</Text>
+                              <Text className="text-gray-700 text-sm leading-5">
+                                Al inscribirte confirmás que la información proporcionada es verídica y que estás físicamente apto para participar. Debés presentar documento válido y el número o pulsera oficial para acceder a largada y servicios.
+                              </Text>
+                            </View>
+                            <View className="border-t border-gray-200 pt-3">
+                              <Text className="text-gray-800 font-semibold mb-1">2. Comportamiento y seguridad</Text>
+                              <Text className="text-gray-700 text-sm leading-5">
+                                Respetá indicaciones de staff, señalización del circuito y zonas restringidas. El organizador puede modificar recorrido, horarios o suspender la prueba por fuerza mayor o razones de seguridad sin generar obligación de reembolso adicional.
+                              </Text>
+                            </View>
+                            <View className="border-t border-gray-200 pt-3">
+                              <Text className="text-gray-800 font-semibold mb-1">3. Pagos y política de reembolsos</Text>
+                              <Text className="text-gray-700 mb-2 text-sm leading-5">
+                                Las inscripciones son personales y no transferibles. No son reembolsables salvo cancelación total del evento por la organización. En caso de reprogramación tu inscripción se mantiene activa automáticamente.
+                              </Text>
+                            </View>
+                            <View className="border-t border-gray-200 pt-3">
+                              <Text className="text-gray-800 font-semibold mb-1">4. Servicios incluidos</Text>
+                              <Text className="text-gray-700 text-sm leading-5">
+                                La inscripción puede incluir hidratación básica, control de tiempo y asistencia médica primaria. Servicios adicionales (medalla, kit, remera) se entregan sólo si fueron anunciados y mientras haya stock disponible.
+                              </Text>
+                            </View>
+                            <View className="border-t border-gray-200 pt-3">
+                              <Text className="text-gray-800 font-semibold mb-1">5. Datos personales y comunicaciones</Text>
+                              <Text className="text-gray-700 text-sm leading-5">
+                                Autorizás el uso de tus datos de contacto para enviarte información relevante del evento (cambios, resultados, avisos). No se compartirán con terceros ajenos a la organización salvo obligación legal.
+                              </Text>
+                            </View>
+                          </View>
+                        }
+                    </View>
+                  </View>
+
+                  <View className="flex-row items-start gap-3">
+                    <TouchableOpacity
+                      onPress={() => setAcceptedWaiver((v) => !v)}
+                      className={`w-6 h-6 rounded-lg border-2 mt-1 items-center justify-center flex-shrink-0 ${
+                        acceptedWaiver ? 'bg-primary border-primary' : 'border-gray-400 bg-white'
+                      }`}
+                    >
+                      {acceptedWaiver && <CheckCircle2 size={20} color="#fff" />}
+                    </TouchableOpacity>
+                    <View className="flex-1">
+                      <Text className="text-gray-700 font-semibold">
+                        Acepto el descargo de responsabilidad *
+                      </Text>
+                      <Text className="text-gray-600 text-xs mt-1">
+                        Reconozco los riesgos inherentes a la actividad deportiva
+                      </Text>
+                        <View className="mt-3" />
+                        {
+                          <View className="mt-4 bg-white rounded-lg p-4 border border-gray-200 space-y-4">
+                            <View>
+                              <Text className="text-gray-800 font-semibold mb-1">1. Riesgos asumidos</Text>
+                              <Text className="text-gray-700 text-sm leading-5">
+                                Comprendés que participar implica esfuerzo físico, exposición climática y posibilidad de caídas, golpes, calambres, deshidratación u otras lesiones imprevistas pese a las medidas de seguridad.
+                              </Text>
+                            </View>
+                            <View className="border-t border-gray-200 pt-3">
+                              <Text className="text-gray-800 font-semibold mb-1">2. Evaluación médica</Text>
+                              <Text className="text-gray-700 text-sm leading-5">
+                                Declarás haber realizado controles médicos adecuados y no presentar condiciones que te impidan participar. Ante cualquier síntoma adverso suspenderás tu esfuerzo y buscarás asistencia.
+                              </Text>
+                            </View>
+                            <View className="border-t border-gray-200 pt-3">
+                              <Text className="text-gray-800 font-semibold mb-1">3. Exención de la organización</Text>
+                              <Text className="text-gray-700 text-sm leading-5">
+                                Eximís a organizadores, sponsors y staff de responsabilidad por daños derivados de la participación salvo dolo o negligencia grave demostrable ante autoridad competente.
+                              </Text>
+                            </View>
+                            <View className="border-t border-gray-200 pt-3">
+                              <Text className="text-gray-800 font-semibold mb-1">4. Equipamiento y autocuidado</Text>
+                              <Text className="text-gray-700 text-sm leading-5">
+                                Te comprometés a usar calzado y vestimenta adecuados, hidratarte y respetar tu propio límite físico. No manipularás señalización ni obstaculizarás a otros participantes.
+                              </Text>
+                            </View>
+                            <View className="border-t border-gray-200 pt-3">
+                              <Text className="text-gray-800 font-semibold mb-1">5. Autorización de asistencia</Text>
+                              <Text className="text-gray-700 text-sm leading-5">
+                                Autorizás a recibir primeros auxilios y traslado si fuese necesario, asumiendo costos posteriores de atención médica especializada que no cubra la organización.
+                              </Text>
+                            </View>
+                          </View>
+                        }
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Botones de acción */}
+              <View className="flex-row gap-3">
                 <TouchableOpacity
-                  className="px-4 py-2 rounded-lg bg-gray-100"
+                  className="flex-1 bg-gray-200 rounded-lg py-4 items-center justify-center"
                   onPress={() => setEnrollModalOpen(false)}
                   disabled={enrolling}
                 >
-                  <Text className="text-gray-800">Cancelar</Text>
+                  <Text className="text-gray-800 font-semibold">Cancelar</Text>
                 </TouchableOpacity>
-                <View className="flex-row items-center gap-3 mr-3 mt-1 flex-wrap">
-                  <TouchableOpacity
-                    onPress={() => setAcceptedTerms((v) => !v)}
-                    accessibilityLabel={acceptedTerms ? 'Casilla aceptada' : 'Casilla no aceptada'}
-                    className={`w-5 h-5 rounded-sm border ${acceptedTerms ? 'bg-primary border-primary' : 'border-gray-300'} items-center justify-center`}
-                  >
-                    {acceptedTerms ? <Text className="text-white font-bold">✓</Text> : null}
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setAcceptedTerms((v) => !v)}>
-                    <Text className="text-gray-800">Acepto los términos y condiciones</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setShowTerms(true)}
-                    className="px-3 py-2 rounded-lg border border-gray-300"
-                  >
-                    <Text className="text-gray-800">Ver términos</Text>
-                  </TouchableOpacity>
-                </View>
-                <View className="flex-row items-center mr-3 mb-3">
-                  <TouchableOpacity
-                    onPress={() => setAcceptedWaiver((v) => !v)}
-                    accessibilityLabel={acceptedWaiver ? 'Casilla aceptada' : 'Casilla no aceptada'}
-                    className={`w-5 h-5 rounded-sm border ${acceptedWaiver ? 'bg-primary border-primary' : 'border-gray-300'} mr-3 items-center justify-center`}
-                  >
-                    {acceptedWaiver ? <Text className="text-white font-bold">✓</Text> : null}
-                  </TouchableOpacity>
-                  <Text className="text-gray-800">Acepto el descargo de responsabilidad</Text>
-                </View>
+
                 <TouchableOpacity
-                  className={`px-4 py-2 rounded-lg ${acceptedTerms ? 'bg-primary' : 'bg-gray-300'}`}
+                  className={`flex-1 rounded-lg py-4 items-center justify-center ${
+                    acceptedTerms && acceptedWaiver ? 'bg-primary' : 'bg-gray-300'
+                  }`}
                   onPress={submitEnroll}
-                  disabled={enrolling || !acceptedTerms}
+                  disabled={enrolling || !acceptedTerms || !acceptedWaiver}
                 >
                   {enrolling ? (
-                    <View className="flex-row items-center">
-                      <ActivityIndicator color="#fff" />
-                      <Text className="text-white font-medium ml-2">Inscribiendo…</Text>
+                    <View className="flex-row items-center gap-2">
+                      <ActivityIndicator color="#fff" size="small" />
+                      <Text className="text-white font-semibold">Inscribiendo…</Text>
                     </View>
                   ) : (
-                    <Text className="text-white font-medium">
+                    <Text className="text-white font-semibold text-base">
                       {selectedEvent?.price && selectedEvent.price > 0
                         ? `Pagar ${formatCurrency(selectedEvent.price)}`
                         : 'Confirmar inscripción'}
@@ -698,69 +1018,39 @@ export default function AllEventsScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-            </>
+            </ScrollView>
           ) : (
-            <>
-              <Text className="text-gray-700 mb-4">
+            <View className="flex-1 items-center justify-center px-6">
+              <AlertCircle size={48} color="#0066cc" />
+              <Text className="text-xl font-bold text-gray-900 mt-4">Iniciar sesión requerido</Text>
+              <Text className="text-gray-600 text-center mt-2">
                 Para inscribirte necesitas iniciar sesión o crear una cuenta.
               </Text>
-              <View className="flex-row justify-end gap-2">
+              <View className="flex-row gap-3 mt-6 w-full">
                 <TouchableOpacity
-                  className="px-4 py-2 rounded-lg bg-gray-100"
+                  className="flex-1 bg-gray-200 rounded-lg py-3 items-center"
                   onPress={() => setEnrollModalOpen(false)}
                 >
-                  <Text className="text-gray-800">Cancelar</Text>
+                  <Text className="text-gray-800 font-semibold">Cancelar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  className="px-4 py-2 rounded-lg bg-black"
+                  className="flex-1 bg-primary rounded-lg py-3 items-center"
                   onPress={() => {
                     setEnrollModalOpen(false);
                     router.push('/auth/LoginScreen');
                   }}
                 >
-                  <Text className="text-white font-medium">Iniciar sesión</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className="px-4 py-2 rounded-lg bg-primary"
-                  onPress={() => {
-                    setEnrollModalOpen(false);
-                    router.push('/auth/LoginScreen?mode=register');
-                  }}
-                >
-                  <Text className="text-white font-medium">Registrarse</Text>
+                  <Text className="text-white font-semibold">Iniciar sesión</Text>
                 </TouchableOpacity>
               </View>
-            </>
+            </View>
           )}
-            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
 
-    <TermsModal
-      visible={showTerms}
-      onClose={() => setShowTerms(false)}
-      onAccept={async () => {
-        setAcceptedTerms(true);
-        setShowTerms(false);
-        try {
-          // Persist locally per-user so modal won't reappear
-          if (user && user._id) {
-            const key = `@gesport:acceptedTerms:${user._id}`;
-            await AsyncStorage.setItem(key, '1');
-            // Try to persist on backend if available
-            try {
-              await updateMe({ acceptedTerms: true } as any);
-            } catch (e) {
-              // ignore backend failures
-            }
-          }
-        } catch (e) {
-          // ignore storage errors
-        }
-      }}
-    />
+    {/* Overlay de términos eliminado: ahora se muestra contenido expandible inline */}
 
     {/* Modal de inscriptos */}
     <Modal

@@ -475,30 +475,45 @@ export default function ProfileScreen() {
             {results.length === 0 ? (
               <Text className="text-brown">Aún no tienes resultados.</Text>
             ) : (
-              results.map((r, idx) => (
-                <Card key={idx} className="mt-3 border border-gray-100">
-                  <View className="flex-row items-center">
-                    <Trophy color="#2C1810" size={18} />
-                    <Text className="text-gray-800 ml-2">
-                      Evento: {(() => {
-                        const ev: any = r.event || {};
-                        return ev.titulo || ev.nombre || ev._id || 'Evento';
-                      })()}
-                    </Text>
-                  </View>
-                  {r.timeMs != null ? (
-                    <Text className="text-gray-700 mt-1">Tiempo: {(() => {
-                      const total = Math.max(0, Math.floor((r.timeMs || 0) / 1000));
-                      const h = Math.floor(total / 3600);
-                      const m = Math.floor((total % 3600) / 60);
-                      const s = total % 60;
-                      const pad = (n: number) => String(n).padStart(2, '0');
-                      return `${pad(h)}:${pad(m)}:${pad(s)}`;
-                    })()}</Text>
-                  ) : null}
-                  <Text className="text-gray-700 mt-1">Posición: {r.position ?? '-'}</Text>
-                </Card>
-              ))
+              results.map((r, idx) => {
+                const eventId = typeof r.event === 'string' ? r.event : r.event?._id || '';
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    onPress={() => {
+                      if (eventId) {
+                        router.push({ pathname: '/events/[id]/results', params: { id: eventId } });
+                      }
+                    }}
+                    activeOpacity={0.7}
+                    className="w-full"
+                  >
+                    <Card className="mt-3 border border-gray-100">
+                      <View className="flex-row items-center">
+                        <Trophy color="#2C1810" size={18} />
+                        <Text className="text-gray-800 ml-2">
+                          Evento: {(() => {
+                            const ev: any = r.event || {};
+                            return ev.titulo || ev.nombre || ev._id || 'Evento';
+                          })()}
+                        </Text>
+                      </View>
+                      {r.timeMs != null ? (
+                        <Text className="text-gray-700 mt-1">Tiempo: {(() => {
+                          const total = Math.max(0, Math.floor((r.timeMs || 0) / 1000));
+                          const h = Math.floor(total / 3600);
+                          const m = Math.floor((total % 3600) / 60);
+                          const s = total % 60;
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          return `${pad(h)}:${pad(m)}:${pad(s)}`;
+                        })()}</Text>
+                      ) : null}
+                      <Text className="text-gray-700 mt-1">Posición: {r.position ?? '-'}</Text>
+                      <Text className="text-primary font-semibold mt-3">Ver resultados →</Text>
+                    </Card>
+                  </TouchableOpacity>
+                );
+              })
             )}
           </View>
 
@@ -518,12 +533,19 @@ export default function ProfileScreen() {
                 const emoji = r.mode === 'walk' ? '🚶' : r.mode === 'cycling' ? '🚴' : '🏃';
                 const modeLabel = r.mode === 'walk' ? 'Caminata' : r.mode === 'cycling' ? 'Ciclismo' : 'Running';
                 return (
-                  <Card key={r.id} className="mt-3 border border-gray-100">
-                    <Text className="text-gray-900 font-semibold">{d.toLocaleDateString()} {pad(d.getHours())}:{pad(d.getMinutes())}</Text>
-                    <Text className="text-gray-700 mt-1">Tipo: {emoji} {modeLabel}</Text>
-                    <Text className="text-gray-700 mt-1">Distancia: {km} km</Text>
-                    <Text className="text-gray-700 mt-1">Tiempo: {pad(h)}:{pad(m)}:{pad(s)}</Text>
-                  </Card>
+                  <TouchableOpacity
+                    key={r.id}
+                    onPress={() => router.push('/actividad/Index')}
+                    activeOpacity={0.7}
+                  >
+                    <Card className="mt-3 border border-gray-100">
+                      <Text className="text-gray-900 font-semibold">{d.toLocaleDateString()} {pad(d.getHours())}:{pad(d.getMinutes())}</Text>
+                      <Text className="text-gray-700 mt-1">Tipo: {emoji} {modeLabel}</Text>
+                      <Text className="text-gray-700 mt-1">Distancia: {km} km</Text>
+                      <Text className="text-gray-700 mt-1">Tiempo: {pad(h)}:{pad(m)}:{pad(s)}</Text>
+                      <Text className="text-primary font-semibold mt-3">Abrir actividad →</Text>
+                    </Card>
+                  </TouchableOpacity>
                 );
               })
             )}

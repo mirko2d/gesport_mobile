@@ -1,11 +1,13 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Calendar, MapPin, Users } from 'lucide-react-native';
+import { AlertCircle, Calendar, CheckCircle2, Eye, FileText, Heart, MapPin, User as UserIcon, Users } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { enroll, getEvent, myEnrollments } from '../../lib/api';
+import { enroll, getEvent, myEnrollments, updateMe } from '../../lib/api';
 import AppShell from '../components/AppShell';
 import Button from '../components/ui/Button';
+import TermsModal from '../components/ui/TermsModal';
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -19,16 +21,24 @@ export default function EventDetailScreen() {
   const [enrolling, setEnrolling] = useState(false);
   const [enrolledEventIds, setEnrolledEventIds] = useState<Set<string>>(new Set());
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<any>({
-    dni: '',
-    fechaNacimiento: '', // YYYY-MM-DD
-    genero: 'X', // 'F' | 'M' | 'X' | 'Otro'
-    tallaRemera: 'M',
-    emergencia: { nombre: '', telefono: '', relacion: '' },
-    salud: { alergias: '' },
-    aceptoTerminos: false,
-    aceptoDescargo: false,
-  });
+  const [showTerms, setShowTerms] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedWaiver, setAcceptedWaiver] = useState(false);
+  // Campos opcionales
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  // Campos obligatorios
+  const [dni, setDni] = useState('');
+  const [birthdate, setBirthdate] = useState('');
+  const [gender, setGender] = useState<'F'|'M'|'X'|'Otro' | ''>('');
+  const [shirtSize, setShirtSize] = useState<'XS'|'S'|'M'|'L'|'XL'|'XXL' | ''>('');
+  const [emgName, setEmgName] = useState('');
+  const [emgPhone, setEmgPhone] = useState('');
+  const [emgRelation, setEmgRelation] = useState('');
+  const [allergies, setAllergies] = useState('');
+  const [conditions, setConditions] = useState('');
+  const [meds, setMeds] = useState('');
 
   const isEnrolled = useMemo(() => (id ? enrolledEventIds.has(String(id)) : false), [enrolledEventIds, id]);
   const isFull = useMemo(() => {
@@ -81,6 +91,15 @@ export default function EventDetailScreen() {
     })();
   }, [isAuth]);
 
+  // Prefill datos usuario
+  useEffect(() => {
+    if (isAuth && user) {
+      const name = [user?.nombre, user?.apellido].filter(Boolean).join(' ').trim();
+      setFullName(name);
+      setEmail(user?.email ?? '');
+    }
+  }, [isAuth, user]);
+
   const handleEnroll = async () => {
     if (!isAuth) {
       router.push('/auth/LoginScreen');
@@ -92,14 +111,23 @@ export default function EventDetailScreen() {
   };
 
   const submitEnrollment = async () => {
-    // Validaciones mínimas en cliente
-    if (!form.aceptoTerminos || !form.aceptoDescargo) {
-      Alert.alert('Falta confirmación', 'Debes aceptar Términos y el Descargo para continuar.');
+    if (!acceptedTerms || !acceptedWaiver) {
+      Alert.alert('Falta confirmación', 'Debes aceptar Términos y Descargo para continuar.');
       return;
     }
+    const payload = {
+      dni,
+      fechaNacimiento: birthdate,
+      genero: gender || 'X',
+      tallaRemera: shirtSize || 'M',
+      emergencia: { nombre: emgName, telefono: emgPhone, relacion: emgRelation },
+      salud: { alergias: allergies, condiciones: conditions, medicamentos: meds },
+      aceptoTerminos: acceptedTerms,
+      aceptoDescargo: acceptedWaiver,
+    };
     try {
       setEnrolling(true);
-      await enroll(String(id), form);
+      await enroll(String(id), payload);
       setShowForm(false);
       Alert.alert('Inscripción completada', 'Quedaste inscripto en el evento.');
       setEnrolledEventIds((prev) => new Set<string>([...prev, String(id)]));
@@ -178,74 +206,205 @@ export default function EventDetailScreen() {
       )}
 
       {/* Modal Formulario de Inscripción */}
-      <Modal visible={showForm} animationType="slide" onRequestClose={() => setShowForm(false)}>
-        <AppShell showBack title="Completar inscripción">
-          <ScrollView className="flex-1 p-4">
-            <Text className="text-lg font-bold mb-2">Datos personales</Text>
-            <Text className="text-gray-700 mb-1">DNI</Text>
-            <TextInput
-              value={form.dni}
-              onChangeText={(t) => setForm((f: any) => ({ ...f, dni: t }))}
-              placeholder="Documento"
-              keyboardType="number-pad"
-              className="border border-gray-300 rounded-lg px-3 py-2 mb-3"
-            />
-            <Text className="text-gray-700 mb-1">Fecha de nacimiento (YYYY-MM-DD)</Text>
-            <TextInput
-              value={form.fechaNacimiento}
-              onChangeText={(t) => setForm((f: any) => ({ ...f, fechaNacimiento: t }))}
-              placeholder="1990-05-21"
-              className="border border-gray-300 rounded-lg px-3 py-2 mb-3"
-            />
+      <Modal visible={showForm} transparent animationType="slide" onRequestClose={() => setShowForm(false)}>
+        <View className="flex-1 bg-black/40">
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}>
+            <View className="flex-1 bg-white rounded-t-3xl mt-2 overflow-hidden">
+              {/* Header */}
+              <View className="bg-gradient-to-r from-primary to-primary/80 px-6 pt-6 pb-4">
+                <View className="flex-row items-center justify-between mb-2">
+                  <View>
+                    <Text className="text-2xl font-extrabold text-white">¡Inscripción!</Text>
+                    <Text className="text-white/90 text-sm mt-1">{event?.titulo || 'Evento'}</Text>
+                  </View>
+                  <View className="flex-row items-center gap-2">
+                    <TouchableOpacity onPress={() => setShowTerms(true)} className="bg-white/20 px-3 py-2 rounded-full">
+                      <Text className="text-white font-semibold">Términos</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setShowForm(false)} className="bg-white/20 p-2 rounded-full">
+                      <Text className="text-white font-bold text-xl">✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
 
-            <Text className="text-gray-700 mb-1">Género</Text>
-            <View className="flex-row gap-2 mb-3">
-              {(['F','M','X','Otro'] as const).map((g) => (
-                <TouchableOpacity key={g} onPress={() => setForm((f: any) => ({ ...f, genero: g }))} className={`px-3 py-2 rounded-full border ${form.genero === g ? 'bg-black border-black' : 'bg-white border-gray-300'}`}>
-                  <Text className={`${form.genero === g ? 'text-white' : 'text-gray-800'}`}>{g}</Text>
-                </TouchableOpacity>
-              ))}
+              <ScrollView
+                contentContainerStyle={{ padding: 20, paddingBottom: 240 }}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                showsVerticalScrollIndicator
+                scrollIndicatorInsets={{ bottom: 24 }}
+                contentInset={{ bottom: 24 } as any}
+              >
+                {/* Datos personales */}
+                <View className="mb-6">
+                  <View className="flex-row items-center gap-2 mb-4">
+                    <UserIcon size={20} color="#0066cc" />
+                    <Text className="text-lg font-bold text-gray-900">Datos personales</Text>
+                  </View>
+                  <View className="bg-gray-50 rounded-xl p-4 space-y-4">
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-2">Nombre completo</Text>
+                      <TextInput className="border-2 border-gray-200 rounded-lg px-4 py-3 bg-white" placeholder="Tu nombre" placeholderTextColor="#9ca3af" value={fullName} onChangeText={setFullName} />
+                    </View>
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-2">Email</Text>
+                      <TextInput className="border-2 border-gray-200 rounded-lg px-4 py-3 bg-white" placeholder="tu@email.com" placeholderTextColor="#9ca3af" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+                    </View>
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-2">Teléfono (opcional)</Text>
+                      <TextInput className="border-2 border-gray-200 rounded-lg px-4 py-3 bg-white" placeholder="Ej: +57 300 123 4567" placeholderTextColor="#9ca3af" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Datos inscripción */}
+                <View className="mb-6">
+                  <View className="flex-row items-center gap-2 mb-4">
+                    <FileText size={20} color="#0066cc" />
+                    <Text className="text-lg font-bold text-gray-900">Datos de inscripción</Text>
+                  </View>
+                  <View className="bg-blue-50 rounded-xl p-4 space-y-4">
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-2">DNI *</Text>
+                      <TextInput className="border-2 border-blue-200 rounded-lg px-4 py-3 bg-white" placeholder="Tu DNI" placeholderTextColor="#9ca3af" value={dni} onChangeText={setDni} />
+                    </View>
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-2">Fecha de nacimiento (YYYY-MM-DD) *</Text>
+                      <TextInput className="border-2 border-blue-200 rounded-lg px-4 py-3 bg-white" placeholder="1990-05-20" placeholderTextColor="#9ca3af" value={birthdate} onChangeText={setBirthdate} />
+                    </View>
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-3">Género *</Text>
+                      <View className="flex-row gap-2 flex-wrap">
+                        {(['F','M','X','Otro'] as const).map((g) => (
+                          <TouchableOpacity key={g} onPress={() => setGender(g)} className={`px-4 py-3 rounded-lg font-semibold ${gender === g ? 'bg-primary' : 'bg-white border-2 border-blue-200'}`}> 
+                            <Text className={gender === g ? 'text-white font-semibold' : 'text-gray-700'}>{g}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-3">Talla de remera *</Text>
+                      <View className="flex-row gap-2 flex-wrap">
+                        {(['XS','S','M','L','XL','XXL'] as const).map((t) => (
+                          <TouchableOpacity key={t} onPress={() => setShirtSize(t)} className={`px-3 py-2 rounded-lg ${shirtSize === t ? 'bg-primary' : 'bg-white border-2 border-blue-200'}`}>
+                            <Text className={shirtSize === t ? 'text-white font-semibold' : 'text-gray-700 font-medium'}>{t}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Contacto emergencia */}
+                <View className="mb-6">
+                  <View className="flex-row items-center gap-2 mb-4">
+                    <AlertCircle size={20} color="#0066cc" />
+                    <Text className="text-lg font-bold text-gray-900">Contacto de emergencia</Text>
+                  </View>
+                  <View className="bg-red-50 rounded-xl p-4 space-y-4">
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-2">Nombre *</Text>
+                      <TextInput className="border-2 border-red-200 rounded-lg px-4 py-3 bg-white" placeholder="Nombre de contacto" placeholderTextColor="#9ca3af" value={emgName} onChangeText={setEmgName} />
+                    </View>
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-2">Teléfono *</Text>
+                      <TextInput className="border-2 border-red-200 rounded-lg px-4 py-3 bg-white" placeholder="Teléfono de contacto" placeholderTextColor="#9ca3af" value={emgPhone} onChangeText={setEmgPhone} keyboardType="phone-pad" />
+                    </View>
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-2">Relación (opcional)</Text>
+                      <TextInput className="border-2 border-red-200 rounded-lg px-4 py-3 bg-white" placeholder="Ej: Familiar, Amigo" placeholderTextColor="#9ca3af" value={emgRelation} onChangeText={setEmgRelation} />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Salud */}
+                <View className="mb-6">
+                  <View className="flex-row items-center gap-2 mb-4">
+                    <Heart size={20} color="#0066cc" />
+                    <Text className="text-lg font-bold text-gray-900">Información de salud</Text>
+                    <Text className="text-gray-500 text-xs">(opcional)</Text>
+                  </View>
+                  <View className="bg-green-50 rounded-xl p-4 space-y-4">
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-2">Alergias</Text>
+                      <TextInput className="border-2 border-green-200 rounded-lg px-4 py-3 bg-white" placeholder="Ej: Penicilina, cacahuetes" placeholderTextColor="#9ca3af" value={allergies} onChangeText={setAllergies} />
+                    </View>
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-2">Condiciones de salud</Text>
+                      <TextInput className="border-2 border-green-200 rounded-lg px-4 py-3 bg-white" placeholder="Ej: Asma, diabetes" placeholderTextColor="#9ca3af" value={conditions} onChangeText={setConditions} />
+                    </View>
+                    <View>
+                      <Text className="text-gray-700 font-semibold mb-2">Medicamentos actuales</Text>
+                      <TextInput className="border-2 border-green-200 rounded-lg px-4 py-3 bg-white" placeholder="Ej: Ibuprofeno, vitaminas" placeholderTextColor="#9ca3af" value={meds} onChangeText={setMeds} />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Términos */}
+                <View className="mb-6">
+                  <View className="bg-gray-100 rounded-xl p-4 space-y-4">
+                    <View className="flex-row items-start gap-3">
+                      <TouchableOpacity onPress={() => setAcceptedTerms((v) => !v)} className={`w-6 h-6 rounded-lg border-2 mt-1 items-center justify-center flex-shrink-0 ${acceptedTerms ? 'bg-primary border-primary' : 'border-gray-400 bg-white'}`}>
+                        {acceptedTerms && <CheckCircle2 size={20} color="#fff" />}
+                      </TouchableOpacity>
+                      <View className="flex-1">
+                        <Text className="text-gray-700 font-semibold">Acepto los términos y condiciones *</Text>
+                        <TouchableOpacity onPress={() => setShowTerms(true)} className="flex-row items-center gap-1 mt-2">
+                          <Eye size={16} color="#0066cc" />
+                          <Text className="text-primary font-semibold underline">Ver términos y condiciones</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <View className="flex-row items-start gap-3">
+                      <TouchableOpacity onPress={() => setAcceptedWaiver((v) => !v)} className={`w-6 h-6 rounded-lg border-2 mt-1 items-center justify-center flex-shrink-0 ${acceptedWaiver ? 'bg-primary border-primary' : 'border-gray-400 bg-white'}`}>
+                        {acceptedWaiver && <CheckCircle2 size={20} color="#fff" />}
+                      </TouchableOpacity>
+                      <View className="flex-1">
+                        <Text className="text-gray-700 font-semibold">Acepto el descargo de responsabilidad *</Text>
+                        <Text className="text-gray-600 text-xs mt-1">Reconozco los riesgos inherentes a la actividad deportiva</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Acciones */}
+                <View className="flex-row gap-3">
+                  <TouchableOpacity className="flex-1 bg-gray-200 rounded-lg py-4 items-center justify-center" onPress={() => setShowForm(false)} disabled={enrolling}>
+                    <Text className="text-gray-800 font-semibold">Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity className={`flex-1 rounded-lg py-4 items-center justify-center ${acceptedTerms && acceptedWaiver ? 'bg-primary' : 'bg-gray-300'}`} onPress={submitEnrollment} disabled={enrolling || !acceptedTerms || !acceptedWaiver}>
+                    {enrolling ? (
+                      <View className="flex-row items-center gap-2">
+                        <ActivityIndicator color="#fff" size="small" />
+                        <Text className="text-white font-semibold">Inscribiendo…</Text>
+                      </View>
+                    ) : (
+                      <Text className="text-white font-semibold text-base">Confirmar inscripción</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             </View>
-
-            <Text className="text-lg font-bold mb-2">Talle de remera</Text>
-            <View className="flex-row flex-wrap gap-2 mb-3">
-              {(['XS','S','M','L','XL','XXL'] as const).map((t) => (
-                <TouchableOpacity key={t} onPress={() => setForm((f: any) => ({ ...f, tallaRemera: t }))} className={`px-3 py-2 rounded-full border ${form.tallaRemera === t ? 'bg-black border-black' : 'bg-white border-gray-300'}`}>
-                  <Text className={`${form.tallaRemera === t ? 'text-white' : 'text-gray-800'}`}>{t}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text className="text-lg font-bold mb-2">Contacto de emergencia</Text>
-            <Text className="text-gray-700 mb-1">Nombre</Text>
-            <TextInput value={form.emergencia.nombre} onChangeText={(t) => setForm((f: any) => ({ ...f, emergencia: { ...f.emergencia, nombre: t } }))} placeholder="Nombre y apellido" className="border border-gray-300 rounded-lg px-3 py-2 mb-3" />
-            <Text className="text-gray-700 mb-1">Teléfono</Text>
-            <TextInput value={form.emergencia.telefono} onChangeText={(t) => setForm((f: any) => ({ ...f, emergencia: { ...f.emergencia, telefono: t } }))} placeholder="Ej: +595..." keyboardType="phone-pad" className="border border-gray-300 rounded-lg px-3 py-2 mb-3" />
-            <Text className="text-gray-700 mb-1">Relación</Text>
-            <TextInput value={form.emergencia.relacion} onChangeText={(t) => setForm((f: any) => ({ ...f, emergencia: { ...f.emergencia, relacion: t } }))} placeholder="Familiar, amigo, etc." className="border border-gray-300 rounded-lg px-3 py-2 mb-3" />
-
-            <Text className="text-lg font-bold mb-2">Salud</Text>
-            <Text className="text-gray-700 mb-1">Alergias (opcional)</Text>
-            <TextInput value={form.salud.alergias} onChangeText={(t) => setForm((f: any) => ({ ...f, salud: { ...f.salud, alergias: t } }))} placeholder="Ej: penicilina, frutos secos" className="border border-gray-300 rounded-lg px-3 py-2 mb-3" />
-
-            <View className="mt-2">
-              <TouchableOpacity onPress={() => setForm((f: any) => ({ ...f, aceptoTerminos: !f.aceptoTerminos }))} className="flex-row items-center mb-2">
-                <Text className="text-2xl mr-2">{form.aceptoTerminos ? '☑' : '☐'}</Text>
-                <Text className="text-gray-800">Acepto Términos y Condiciones</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setForm((f: any) => ({ ...f, aceptoDescargo: !f.aceptoDescargo }))} className="flex-row items-center">
-                <Text className="text-2xl mr-2">{form.aceptoDescargo ? '☑' : '☐'}</Text>
-                <Text className="text-gray-800">Acepto el Descargo de responsabilidad</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View className="flex-row justify-between mt-6">
-              <Button title="Cancelar" variant="secondary" onPress={() => setShowForm(false)} />
-              <Button title="Confirmar inscripción" onPress={submitEnrollment} loading={enrolling} />
-            </View>
-          </ScrollView>
-        </AppShell>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
+
+      <TermsModal
+        visible={showTerms}
+        onClose={() => setShowTerms(false)}
+        onAccept={async () => {
+          setAcceptedTerms(true);
+          setShowTerms(false);
+          try {
+            if (user && (user as any)._id) {
+              const key = `@gesport:acceptedTerms:${(user as any)._id}`;
+              await AsyncStorage.setItem(key, '1');
+              try { await updateMe({ acceptedTerms: true } as any); } catch {}
+            }
+          } catch {}
+        }}
+      />
     </AppShell>
   );
 }

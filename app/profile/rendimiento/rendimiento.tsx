@@ -1,7 +1,8 @@
 import { Activity, Timer, TrendingUp } from 'lucide-react-native';
-import React from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { default as React, useMemo, useState } from 'react';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
+import MapView, { Circle, Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import AppShell from '../../components/AppShell';
 import Card from '../../components/ui/Card';
 
@@ -75,7 +76,44 @@ const performanceSummary = {
   worstPace: '6:10 min/km',
 };
 
+const costaneraRoute = [
+  { latitude: -26.1820, longitude: -58.1750 },
+  { latitude: -26.1835, longitude: -58.1745 },
+  { latitude: -26.1850, longitude: -58.1735 },
+  { latitude: -26.1865, longitude: -58.1740 },
+  { latitude: -26.1875, longitude: -58.1755 },
+  { latitude: -26.1870, longitude: -58.1770 },
+  { latitude: -26.1855, longitude: -58.1765 },
+];
+
+// Mock global participants (clasificación)
+const participants = [
+  { name: 'Juan Pérez', time: '45:23', position: 1, dorsal: 101 },
+  { name: 'María García', time: '46:12', position: 2, dorsal: 245 },
+  { name: 'Carlos López', time: '47:05', position: 3, dorsal: 387 },
+  { name: 'Ana Martínez', time: '48:30', position: 4, dorsal: 523 },
+  { name: 'Pedro Ruiz', time: '49:15', position: 5, dorsal: 654 },
+];
+
 export default function PerformanceScreen() {
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const heatPoints = useMemo(() => {
+    return costaneraRoute.map((pt, idx) => {
+      const density = Math.ceil((participants.length / costaneraRoute.length) * (idx + 1));
+      return { lat: pt.latitude, lng: pt.longitude, count: density };
+    });
+  }, []);
+  const maxHeatCount = useMemo(() => heatPoints.reduce((m, p) => (p.count > m ? p.count : m), 0), [heatPoints]);
+  const heatColor = (count: number) => {
+    if (maxHeatCount <= 1) return 'rgba(255,0,0,0.5)';
+    const r = count / maxHeatCount;
+    if (r < 0.25) return 'rgba(0,0,255,0.35)';
+    if (r < 0.5) return 'rgba(0,255,255,0.45)';
+    if (r < 0.75) return 'rgba(255,165,0,0.55)';
+    return 'rgba(255,0,0,0.65)';
+  };
+  const centerLat = costaneraRoute.reduce((sum, p) => sum + p.latitude, 0) / costaneraRoute.length;
+  const centerLon = costaneraRoute.reduce((sum, p) => sum + p.longitude, 0) / costaneraRoute.length;
   return (
     <AppShell showBack title="Mi Rendimiento">
       <ScrollView className="flex-1 px-4 py-6 bg-white">
@@ -206,6 +244,89 @@ export default function PerformanceScreen() {
               <Text className="flex-1 text-center text-gray-800">{segment.pace}</Text>
             </View>
           ))}
+        </Card>
+
+        {/* Global Results (Clasificación + Mapa) */}
+        <Card className="mb-6">
+          <Text className="text-xl font-bold text-gray-800 mb-4">Resultados Globales</Text>
+
+          <View style={{ height: 260, borderRadius: 12, overflow: 'hidden', backgroundColor: '#E5E7EB' }}>
+            <MapView
+              provider={PROVIDER_GOOGLE}
+              style={{ flex: 1 }}
+              initialRegion={{
+                latitude: centerLat,
+                longitude: centerLon,
+                latitudeDelta: 0.08,
+                longitudeDelta: 0.08,
+              }}
+              scrollEnabled={false}
+            >
+              {!showHeatmap && (
+                <Polyline coordinates={costaneraRoute} strokeColor="#111" strokeWidth={4} />
+              )}
+              {showHeatmap && heatPoints.map((hp, i) => (
+                <Circle
+                  key={i}
+                  center={{ latitude: hp.lat, longitude: hp.lng }}
+                  radius={10 + (hp.count / (maxHeatCount || 1)) * 25}
+                  strokeColor="transparent"
+                  fillColor={heatColor(hp.count)}
+                />
+              ))}
+              <Marker coordinate={costaneraRoute[0]} title="Inicio" />
+              <Marker coordinate={costaneraRoute[costaneraRoute.length - 1]} title="Meta" />
+            </MapView>
+          </View>
+          <View className="flex-row justify-between mt-3 gap-2">
+            <TouchableOpacity
+              onPress={() => setShowHeatmap(false)}
+              className={`flex-1 px-4 py-2 rounded-full border ${!showHeatmap ? 'bg-black border-black' : 'bg-white border-gray-300'}`}
+            >
+              <Text className={!showHeatmap ? 'text-white font-semibold text-center' : 'text-gray-800 font-semibold text-center'}>
+                Ruta
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowHeatmap(true)}
+              className={`flex-1 px-4 py-2 rounded-full border ${showHeatmap ? 'bg-black border-black' : 'bg-white border-gray-300'}`}
+            >
+              <Text className={showHeatmap ? 'text-white font-semibold text-center' : 'text-gray-800 font-semibold text-center'}>
+                Mapa de calor
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View className="mt-5">
+            <View className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+              <View className="flex-row justify-between mb-2">
+                <Text className="text-gray-600">Participantes</Text>
+                <Text className="font-extrabold text-gray-900">{participants.length}</Text>
+              </View>
+              <View className="flex-row justify-between">
+                <Text className="text-gray-600">Ganador</Text>
+                <Text className="font-extrabold text-gray-900">{participants[0].name}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View className="mt-4">
+            <Text className="text-lg font-extrabold text-gray-900 mb-3">Clasificación</Text>
+            {participants.map((p) => (
+              <View key={p.position} className="bg-white border border-gray-200 rounded-xl p-3 mb-2 flex-row justify-between items-center">
+                <View className="flex-row items-center gap-3 flex-1">
+                  <View className="bg-black rounded-full w-8 h-8 items-center justify-center">
+                    <Text className="text-white font-bold text-sm">#{p.position}</Text>
+                  </View>
+                  <View className="flex-1">
+                    <Text className="font-semibold text-gray-900">{p.name}</Text>
+                    <Text className="text-gray-500 text-xs">Dorsal: {p.dorsal}</Text>
+                  </View>
+                </View>
+                <Text className="font-extrabold text-[#2C1810]">{p.time}</Text>
+              </View>
+            ))}
+          </View>
         </Card>
 
         {/* Performance Tips */}
